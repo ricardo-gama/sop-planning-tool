@@ -869,4 +869,5 @@ const styles = {
   stageName:{fontSize:13,fontWeight:600,color:"#0f2942",width:70,flexShrink:0},
   stageStd:{fontSize:11,color:"#94a3b8",width:64,flexShrink:0},
   inpSm:{fontSize:13,padding:"5px 7px",borderRadius:6,border:"1px solid #cbd5e1",background:"#fff",flex:1,minWidth:0},
+  versionTag:{fontSize:11,fontWeight:400,color:"#94a3b8",marginLeft:6},
 };
