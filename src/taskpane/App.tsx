@@ -177,6 +177,7 @@ export default function App() {
   const [capOvRows,setCapOvRows] = useState<CapOvRow[]>([]);
   const [plants,setPlants] = useState<string[]>([]);
   const [weekLabelToIndex,setWeekLabelToIndex] = useState<Record<string,number>>({});
+  const [indexToWeekLabel,setIndexToWeekLabel] = useState<Record<string,string>>({});
   const [routingKeys,setRoutingKeys] = useState<string[]>([]);
   const [routingLoads,setRoutingLoads] = useState<Record<string,Record<string,number>>>({});
   // graph
@@ -228,6 +229,10 @@ export default function App() {
     if (/^\d+$/.test(t)) return Number(t); // already a plain index
     const idx = weekLabelToIndex[t];
     return idx !== undefined ? idx : ""; // unresolvable label -> blank, not NaN
+  };
+  const formatWeek = (raw: string): string => {
+    if (raw === "") return "";
+    return indexToWeekLabel[raw.trim()] ?? raw;
   };
 
   const load = useCallback(async () => {
@@ -300,13 +305,19 @@ export default function App() {
 
       const wIdx=calData.headers.indexOf("WeekIndex"), wStart=calData.headers.indexOf("WeekStart");
       const l2i: Record<string,number> = {};
+      const i2l: Record<string,string> = {};
       if (wIdx>=0 && wStart>=0) {
         for (const r of calData.rows) {
           const idx=Number(r[wIdx]), start=Number(r[wStart]);
-          if (idx>=1 && start) l2i[isoWeekLabel(start)] = idx;
+          if (idx>=1 && start) {
+            const label = isoWeekLabel(start);
+            l2i[label] = idx;
+            i2l[String(idx)] = label;
+          }
         }
       }
       setWeekLabelToIndex(l2i);
+      setIndexToWeekLabel(i2l);
 
       setLoadMsg(`Loaded ${rData.rows.length} capacity rows · ${sData.rows.length} schedule lines`);
     } catch(e:unknown){setErrMsg(String(e));setLoadMsg("");}
@@ -722,7 +733,7 @@ export default function App() {
                       const seed: Record<string,{loadOv:string;startWk:string}> = {};
                       for (const st of STAGES) {
                         const ex = adjRows.find(r=>r.oppId===d.oppId&&r.lineId===d.lineId&&r.stage===st);
-                        seed[st] = { loadOv: ex?.loadOv ?? "", startWk: ex?.startWk ?? "" };
+                        seed[st] = { loadOv: ex?.loadOv ?? "", startWk: ex?.startWk ? formatWeek(ex.startWk) : "" };
                       }
                       setDStageOv(seed);
                     }}>Edit</button>
@@ -759,8 +770,8 @@ export default function App() {
               {adjRows.map((r,i)=>(
                 <tr key={i} style={i%2===0?s.trEven:s.trOdd}>
                   <td style={s.tdMono}>{r.oppId}</td><td style={s.tdMono}>{r.lineId}</td>
-                  <td style={s.td}>{r.stage}</td><td style={s.tdR}>{r.loadOv||"—"}</td><td style={s.tdR}>{r.startWk||"—"}</td>
-                  <td style={s.td}><button style={s.editBtn} onClick={()=>{setAOppId(r.oppId);setALineId(r.lineId);setAStage(r.stage);setALoadOv(r.loadOv);setAStartWk(r.startWk);}}>Edit</button></td>
+                  <td style={s.td}>{r.stage}</td><td style={s.tdR}>{r.loadOv||"—"}</td><td style={s.tdR}>{r.startWk?formatWeek(r.startWk):"—"}</td>
+                  <td style={s.td}><button style={s.editBtn} onClick={()=>{setAOppId(r.oppId);setALineId(r.lineId);setAStage(r.stage);setALoadOv(r.loadOv);setAStartWk(formatWeek(r.startWk));}}>Edit</button></td>
                 </tr>
               ))}
             </tbody></table></div>
@@ -784,8 +795,8 @@ export default function App() {
               {capOvRows.map((r,i)=>(
                 <tr key={i} style={i%2===0?s.trEven:s.trOdd}>
                   <td style={s.td}>{r.plant}</td><td style={s.td}>{r.stage}</td>
-                  <td style={s.tdR}>{r.week}</td><td style={s.tdR}>{r.cap}</td>
-                  <td style={s.td}><button style={s.editBtn} onClick={()=>{setCoPlant(r.plant);setCoStage(r.stage);setCoWeek(r.week);setCoCap(r.cap);}}>Edit</button></td>
+                  <td style={s.tdR}>{r.week?formatWeek(r.week):"—"}</td>
+                  <td style={s.td}><button style={s.editBtn} onClick={()=>{setCoPlant(r.plant);setCoStage(r.stage);setCoWeek(formatWeek(r.week));setCoCap(r.cap);}}>Edit</button></td>
                 </tr>
               ))}
             </tbody></table></div>
