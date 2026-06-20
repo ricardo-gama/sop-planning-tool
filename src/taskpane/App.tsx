@@ -7,6 +7,7 @@ import {
 } from "recharts";
 
 /* ─── constants ─────────────────────────────────────────────────────────────── */
+const APP_VERSION = "v0.1.0";
 const STAGES = ["ESL", "CTO", "Assembly", "Testing", "FAT"];
 const STATUS_LIST = [
   "Backlog","FROM OI TO KO","ANTICIPATION - ENGINEERING ONLY + PROCUREMENT",
@@ -432,7 +433,7 @@ export default function App() {
   return (
     <div style={s.shell}>
       <div style={s.header}>
-        <div style={s.headerTitle}>S&OP Planning</div>
+        <div style={s.headerTitle}>S&OP Planning <span style={s.versionTag}>{APP_VERSION}</span></div>
         <div style={s.modeToggle}>
           <button style={mode==="constrained"?s.modeActive:s.modeBtn} onClick={()=>setMode("constrained")}>Constrained</button>
           <button style={mode==="unconstrained"?s.modeActive:s.modeBtn} onClick={()=>setMode("unconstrained")}>Unconstrained</button>
