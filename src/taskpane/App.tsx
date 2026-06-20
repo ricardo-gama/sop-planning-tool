@@ -318,9 +318,9 @@ export default function App() {
       }
       setWeekLabelToIndex(l2i);
       setIndexToWeekLabel(i2l);
-      console.log("[DEBUG] Calendar rows:", calData.rows.length, "i2l keys:", Object.keys(i2l).length, "sample i2l[59]:", i2l["59"], "sample row0:", calData.rows[0]);
 
-      setLoadMsg(`Loaded ${rData.rows.length} capacity rows · ${sData.rows.length} schedule lines`);
+      // setLoadMsg(`Loaded ${rData.rows.length} capacity rows · ${sData.rows.length} schedule lines`);
+      setLoadMsg(`Loaded ${rData.rows.length} capacity rows · ${sData.rows.length} schedule lines · Cal rows: ${calData.rows.length} · i2l keys: ${Object.keys(i2l).length} · i2l[59]: ${i2l["59"] ?? "MISSING"}`);
     } catch(e:unknown){setErrMsg(String(e));setLoadMsg("");}
     setLoading(false);
   },[mode]);
