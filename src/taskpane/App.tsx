@@ -1,9 +1,10 @@
 /// <reference types="office-js" />
+/// <reference types="office-js" />
 import * as React from "react";
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  Legend, ResponsiveContainer,
+  Legend, ResponsiveContainer, Line,
 } from "recharts";
 
 /* ─── constants ─────────────────────────────────────────────────────────────── */
@@ -337,11 +338,23 @@ export default function App() {
     );
     const wm:Record<string,Record<string,number>>={};
     for(const r of f){if(!wm[r.week])wm[r.week]={};wm[r.week][r.status]=(wm[r.week][r.status]??0)+r.total;}
-    // return Object.keys(wm).sort().map(wk=>({week:wk,...wm[wk]}));
+    // capacity per week: one cap value per plant (avoid double-counting across status rows), then sum
+    const capByWeek: Record<string, number> = {};
+    for (const r of f) {
+      if (!capByWeek[r.week]) capByWeek[r.week] = 0;
+      // use a per-plant sentinel to take only the first cap seen per plant+week
+    }
+    const capSeenKey = (wk: string, pl: string) => `${wk}||${pl}`;
+    const capSeen = new Set<string>();
+    for (const r of f) {
+      const k = capSeenKey(r.week, r.plant);
+      if (!capSeen.has(k)) { capSeen.add(k); capByWeek[r.week] = (capByWeek[r.week] ?? 0) + r.cap; }
+    }
     const allWeeks = Object.keys(wm).sort();
     return allWeeks.map(wk => {
       const base: Record<string, number | string> = { week: wk };
       for (const st of STATUS_STACK_ORDER) base[st] = wm[wk][st] ?? 0;
+      base["_cap"] = capByWeek[wk] ?? 0;
       return base;
     });
   })();
@@ -513,6 +526,9 @@ export default function App() {
                       stackId="1" stroke={STATUS_COLORS[st]} fill={STATUS_COLORS[st]}
                       fillOpacity={0.75} strokeWidth={1} dot={false} connectNulls={true}/>
                   ))}
+                  <Line type="monotone" dataKey="_cap" name="Capacity"
+                    stroke="#dc2626" strokeWidth={2} dot={false} connectNulls={true}
+                    legendType="line" isAnimationActive={false}/>
                 </AreaChart>
               </ResponsiveContainer>
             </div>
