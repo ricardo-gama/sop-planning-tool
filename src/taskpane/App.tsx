@@ -337,7 +337,13 @@ export default function App() {
     );
     const wm:Record<string,Record<string,number>>={};
     for(const r of f){if(!wm[r.week])wm[r.week]={};wm[r.week][r.status]=(wm[r.week][r.status]??0)+r.total;}
-    return Object.keys(wm).sort().map(wk=>({week:wk,...wm[wk]}));
+    // return Object.keys(wm).sort().map(wk=>({week:wk,...wm[wk]}));
+    const allWeeks = Object.keys(wm).sort();
+    return allWeeks.map(wk => {
+      const base: Record<string, number | string> = { week: wk };
+      for (const st of STATUS_STACK_ORDER) base[st] = wm[wk][st] ?? 0;
+      return base;
+    });
   })();
   const activeStatuses = gStatuses.length?gStatuses:STATUS_LIST;
 
@@ -505,7 +511,7 @@ export default function App() {
                   {STATUS_STACK_ORDER.filter(st=>activeStatuses.includes(st)&&graphData.some(d=>(d as unknown as Record<string,number>)[st]!=null)).map(st=>(
                     <Area key={st} type="monotone" dataKey={st} name={STATUS_SHORT[st]}
                       stackId="1" stroke={STATUS_COLORS[st]} fill={STATUS_COLORS[st]}
-                      fillOpacity={0.75} strokeWidth={1} dot={false}/>
+                      fillOpacity={0.75} strokeWidth={1} dot={false} connectNulls={true}/>
                   ))}
                 </AreaChart>
               </ResponsiveContainer>
