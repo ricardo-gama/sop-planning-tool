@@ -8,13 +8,13 @@ import {
 } from "recharts";
 
 /* ─── constants ─────────────────────────────────────────────────────────────── */
-const APP_VERSION = "v0.1.0";
+// DIFF: bumped to v0.2.0 — deal alignment feature
+const APP_VERSION = "v0.2.0";
 const STAGES = ["ESL", "CTO", "Assembly", "Testing", "FAT"];
 const STATUS_LIST = [
   "Backlog","FROM OI TO KO","ANTICIPATION - ENGINEERING ONLY + PROCUREMENT",
   "ANTICIPATION - ENGINEERING ONLY","ON HAND","FORECAST","BACKUP","OUTLOOK","OTHER",
 ];
-// fixed stack order for the area chart: Backlog at the bottom, then status priority order
 const STATUS_STACK_ORDER = [
   "Backlog",
   "FROM OI TO KO",
@@ -47,15 +47,14 @@ type Mode = "constrained"|"unconstrained";
 /* ─── types ─────────────────────────────────────────────────────────────────── */
 type ResultRow = { plant:string;stage:string;week:string;status:string;backlog:number;planned:number;total:number;cap:number;util:number;overload:number; };
 type SchedRow = { oppId:string;lineId:string;equip:string;plant:string;oiDate:number;status:string;kom:number;fat:number;fca:number;lt:number; };
-type DemandRow = { rowIdx:number;oppId:string;lineId:string;equip:string;routingKey:string;plant:string;oiDate:number;status:string;priority:string;changeFlag:string;changedFields:string; };
+// DIFF: added alignFlag field
+type DemandRow = { rowIdx:number;oppId:string;lineId:string;equip:string;routingKey:string;plant:string;oiDate:number;status:string;priority:string;changeFlag:string;changedFields:string;alignFlag:string; };
 type AdjRow = { rowIdx:number;oppId:string;lineId:string;stage:string;loadOv:string;startWk:string; };
 type CapOvRow = { rowIdx:number;plant:string;stage:string;week:string;cap:string; };
 
 /* ─── helpers ───────────────────────────────────────────────────────────────── */
 const excelDateToStr = (s:number) => s ? new Date((s-25569)*86400000).toISOString().slice(0,10) : "";
 
-// Mirrors the Office Script's isoWeekLabel() exactly — same Excel-serial math,
-// same ISO week calculation. Keep these two in sync if either changes.
 function isoWeekLabel(serial: number): string {
   const d = new Date((serial - 25569) * 86400000);
   const day = (d.getUTCDay() + 6) % 7;
@@ -66,7 +65,7 @@ function isoWeekLabel(serial: number): string {
   return `${isoYear}-${String(week).padStart(2, "0")}`;
 }
 const utilColor = (u:number,ov:number) => ov>0?"#dc2626":u>=90?"#ea580c":u>=70?"#ca8a04":u>0?"#16a34a":"#e2e8f0";
-const utilText = (u:number,ov:number) => (ov>0||u>=70)?"#fff":u>0?"#14532d":"#94a3b8";
+const utilText = (u:number,ov:number) => (ov>0||u>=90)?"#fff":u>0?"#14532d":"#94a3b8";
 
 /* ─── Office.js helpers ─────────────────────────────────────────────────────── */
 async function readNamedTable(name:string):Promise<{headers:string[];rows:(string|number)[][]}> {
@@ -117,13 +116,11 @@ async function downloadChartAsPng(containerEl: HTMLElement, filename: string): P
   svgClone.setAttribute("viewBox", `0 0 ${bbox.width} ${bbox.height}`);
   svgClone.style.fontFamily = "Arial, sans-serif";
 
-  // inline a white background rect so the PNG isn't transparent
   const bgRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
   bgRect.setAttribute("width", "100%"); bgRect.setAttribute("height", "100%"); bgRect.setAttribute("fill", "#ffffff");
   svgClone.insertBefore(bgRect, svgClone.firstChild);
 
   const svgData = new XMLSerializer().serializeToString(svgClone);
-  // base64 data URI avoids blob-URL cross-origin / tainted-canvas issues in some webviews
   const svg64 = btoa(unescape(encodeURIComponent(svgData)));
   const dataUrl = `data:image/svg+xml;base64,${svg64}`;
 
@@ -131,7 +128,7 @@ async function downloadChartAsPng(containerEl: HTMLElement, filename: string): P
     const img = new Image();
     img.onload = () => {
       try {
-        const scale = 2; // retina-ish output
+        const scale = 2;
         const canvas = document.createElement("canvas");
         canvas.width = bbox.width * scale;
         canvas.height = bbox.height * scale;
@@ -192,8 +189,6 @@ export default function App() {
   const [hPlant,setHPlant] = useState("");
   const [hStage,setHStage] = useState("Assembly");
   const [hSelWeek,setHSelWeek] = useState<string>("");
-  // schedule
-  // (sPlant removed — merged into dPlantFilter on the unified Demand+Schedule tab)
   // demand
   const [dFilter,setDFilter] = useState<"unassigned"|"all">("unassigned");
   const [dChangeFilter,setDChangeFilter] = useState("");
@@ -204,6 +199,8 @@ export default function App() {
   const [dRk,setDRk] = useState("");
   const [dPlant,setDPlant] = useState("");
   const [dPriority,setDPriority] = useState("");
+  // DIFF: edit card AlignFlag state
+  const [dAlignFlag,setDAlignFlag] = useState(false);
   const [dSaving,setDSaving] = useState(false);
   const [dStageOv,setDStageOv] = useState<Record<string,{loadOv:string;startWk:string}>>({});
   // adjustments
@@ -222,15 +219,12 @@ export default function App() {
   const chartRef = useRef<HTMLDivElement>(null);
   const [shotBusy,setShotBusy] = useState(false);
 
-  // Resolves what a planner typed (plain index "47" or label "2026-14") to the
-  // numeric WeekIndex the Office Script expects. Returns "" if it can't resolve,
-  // so a typo surfaces as an empty/blank write rather than a silent NaN.
   const resolveWeekInput = (raw: string): string | number => {
     if (raw === "") return "";
     const t = raw.trim();
-    if (/^\d+$/.test(t)) return Number(t); // already a plain index
+    if (/^\d+$/.test(t)) return Number(t);
     const idx = weekLabelToIndex[t];
-    return idx !== undefined ? idx : ""; // unresolvable label -> blank, not NaN
+    return idx !== undefined ? idx : "";
   };
   const formatWeek = (raw: string): string => {
     if (raw === "") return "";
@@ -269,6 +263,8 @@ export default function App() {
         priority:String(r[dh.indexOf("Priority")]??""),
         changeFlag:String(r[dh.indexOf("ChangeFlag")]??""),
         changedFields:String(r[dh.indexOf("ChangedFields")]??""),
+        // DIFF: read AlignFlag; gracefully blank if column not yet added
+        alignFlag:String(r[dh.indexOf("AlignFlag")] ?? ""),
       })));
       const ah=aData.headers; setAdjHeaders(ah);
       setAdjRows(aData.rows.map((r,i)=>({
@@ -321,8 +317,7 @@ export default function App() {
       setWeekLabelToIndex(l2i);
       setIndexToWeekLabel(i2l);
 
-      // setLoadMsg(`Loaded ${rData.rows.length} capacity rows · ${sData.rows.length} schedule lines`);
-      setLoadMsg(`Loaded ${rData.rows.length} capacity rows · ${sData.rows.length} schedule lines · Cal rows: ${calData.rows.length} · i2l keys: ${Object.keys(i2l).length} · i2l[59]: ${i2l["59"] ?? "MISSING"}`);
+      setLoadMsg(`Loaded ${rData.rows.length} capacity rows · ${sData.rows.length} schedule lines`);
     } catch(e:unknown){setErrMsg(String(e));setLoadMsg("");}
     setLoading(false);
   },[mode]);
@@ -338,11 +333,9 @@ export default function App() {
     );
     const wm:Record<string,Record<string,number>>={};
     for(const r of f){if(!wm[r.week])wm[r.week]={};wm[r.week][r.status]=(wm[r.week][r.status]??0)+r.total;}
-    // capacity per week: one cap value per plant (avoid double-counting across status rows), then sum
     const capByWeek: Record<string, number> = {};
     for (const r of f) {
       if (!capByWeek[r.week]) capByWeek[r.week] = 0;
-      // use a per-plant sentinel to take only the first cap seen per plant+week
     }
     const capSeenKey = (wk: string, pl: string) => `${wk}||${pl}`;
     const capSeen = new Set<string>();
@@ -372,8 +365,16 @@ export default function App() {
   const schedByLine: Record<string, SchedRow> = {};
   for (const s of schedule) schedByLine[s.lineId] = s;
 
+  // DIFF: derive set of OppIDs that have any line with AlignFlag set
+  // Used to show deal-level alignment indicator in the table
+  const alignedOppIds = new Set<string>();
+  for (const d of demand) {
+    const f = d.alignFlag;
+    if (f !== "" && f !== "0") alignedOppIds.add(d.oppId);
+  }
+
   const demandFiltered=demand.filter(d=>{
-    if(!dChangeFilter && d.changeFlag==="Removed")return false; // hide Removed by default unless explicitly filtering for it
+    if(!dChangeFilter && d.changeFlag==="Removed")return false;
     if(dChangeFilter && d.changeFlag!==dChangeFilter)return false;
     if(dFilter==="unassigned"&&d.routingKey&&d.plant)return false;
     if(dPlantFilter&&d.plant!==dPlantFilter)return false;
@@ -382,10 +383,21 @@ export default function App() {
     return true;
   }).map(d=>({ ...d, sched: schedByLine[d.lineId] }));
 
+  // DIFF: toggle AlignFlag for a single line directly from the table row
+  const toggleAlignFlag = async (d: DemandRow) => {
+    const newVal = (d.alignFlag !== "" && d.alignFlag !== "0") ? "" : "1";
+    try {
+      await writeCellInTable("Demand", d.rowIdx, "AlignFlag", newVal, demandHeaders);
+      setActionNote(newVal === "1"
+        ? `Deal ${d.oppId} flagged for alignment.`
+        : `Alignment flag cleared for ${d.oppId} / ${d.lineId}.`);
+      await load();
+    } catch(e) { setActionNote(`Error: ${String(e)}`); }
+  };
+
   const saveDemandLine=async()=>{
     if(!dEditing)return;
 
-    // validate all stage week inputs resolve before writing anything
     for (const st of STAGES) {
       const ov = dStageOv[st];
       if (!ov || ov.startWk==="") continue;
@@ -401,8 +413,9 @@ export default function App() {
       if(dRk) await writeCellInTable("Demand",dEditing.rowIdx,"RoutingKey",dRk,h);
       if(dPlant) await writeCellInTable("Demand",dEditing.rowIdx,"Plant",dPlant,h);
       await writeCellInTable("Demand",dEditing.rowIdx,"Priority",dPriority===""?"":Number(dPriority),h);
+      // DIFF: persist AlignFlag from edit card checkbox
+      await writeCellInTable("Demand",dEditing.rowIdx,"AlignFlag",dAlignFlag?"1":"",h);
 
-      // persist per-stage adjustments (only stages with a value set)
       for (const st of STAGES) {
         const ov = dStageOv[st];
         if (!ov || (ov.loadOv==="" && ov.startWk==="")) continue;
@@ -623,7 +636,7 @@ export default function App() {
         </div>
       )}
 
-      {/* DEMAND (merged with Schedule) */}
+      {/* DEMAND */}
       {tab==="demand"&&(
         <div style={s.content}>
           <div style={s.sectionLbl}>Run scripts</div>
@@ -702,6 +715,22 @@ export default function App() {
                 </label>
               </div>
 
+              {/* DIFF: AlignFlag checkbox in edit card */}
+              <div style={s.alignFlagRow}>
+                <label style={s.alignFlagLabel}>
+                  <input
+                    type="checkbox"
+                    checked={dAlignFlag}
+                    onChange={e=>setDAlignFlag(e.target.checked)}
+                    style={{marginRight:6}}
+                  />
+                  <span style={s.alignFlagText}>Align deal LT</span>
+                  <span style={s.alignFlagHint}>
+                    — flags all equipment in deal <strong>{dEditing.oppId}</strong> to finish within the same window as the slowest line
+                  </span>
+                </label>
+              </div>
+
               <div style={{...s.sectionLbl,marginTop:12}}>Stage adjustments (blank = use standard)</div>
               {STAGES.map(st => {
                 const std = dRk ? (routingLoads[dRk]?.[st] ?? 0) : (dEditing.routingKey ? (routingLoads[dEditing.routingKey]?.[st] ?? 0) : 0);
@@ -727,43 +756,74 @@ export default function App() {
             </div>
           )}
 
-          <div style={s.sectionLbl}>{demandFiltered.length} lines</div>
+          {/* DIFF: alignment legend note */}
+          <div style={s.sectionLbl}>
+            {demandFiltered.length} lines
+            {alignedOppIds.size > 0 && (
+              <span style={s.alignLegend}>· <span style={s.alignDot}>⟳</span> = deal aligned ({alignedOppIds.size} deal{alignedOppIds.size!==1?"s":""})</span>
+            )}
+          </div>
+
           <div style={s.tableScrollFlex}>
             <table style={s.table}><thead><tr>
               <th style={s.th}>OppID</th><th style={s.th}>Equipment</th>
               <th style={s.th}>Routing</th><th style={s.th}>Plant</th><th style={s.thR}>Priority</th>
-              <th style={s.th}>Change</th><th style={s.th}>Status</th><th style={s.thR}>OI</th><th style={s.thR}>KOM</th>
-              <th style={s.thR}>FAT</th><th style={s.thR}>FCA</th><th style={s.thR}>LT</th><th style={s.th}></th>
+              <th style={s.th}>Change</th><th style={s.th}>Status</th><th style={s.thR}>OI</th>
+              <th style={s.thR}>KOM</th><th style={s.thR}>FAT</th><th style={s.thR}>FCA</th>
+              <th style={s.thR}>LT</th>
+              {/* DIFF: AlignFlag column header */}
+              <th style={s.th} title="Align deal LT — flags all equipment in this deal to finish within the same window">Align</th>
+              <th style={s.th}></th>
             </tr></thead><tbody>
-              {demandFiltered.map((d,i)=>(
-                <tr key={i} style={dEditing?.lineId===d.lineId?s.trSelected:i%2===0?s.trEven:s.trOdd}>
-                  <td style={s.tdMono}>{d.oppId}</td>
-                  <td style={{...s.td,maxWidth:90,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={d.equip}>{d.equip}</td>
-                  <td style={{...s.td,color:d.routingKey?"inherit":"#dc2626"}}>{d.routingKey||"—"}</td>
-                  <td style={{...s.td,color:d.plant?"inherit":"#dc2626"}}>{d.plant||"—"}</td>
-                  <td style={s.tdR}>{d.priority||""}</td>
-                  <td style={s.td}>
-                    {d.changeFlag&&<span style={{...s.badge,background:CHANGE_COLORS[d.changeFlag]??"#6b7280"}}>{d.changeFlag}</span>}
-                  </td>
-                  <td style={s.td}>{d.status?<span style={{...s.badge,background:STATUS_COLORS[d.status]??"#6b7280"}}>{STATUS_SHORT[d.status]??d.status.split(" ")[0]}</span>:<span style={{color:"#94a3b8"}}>—</span>}</td>
-                  <td style={s.tdR}>{excelDateToStr(d.oiDate)}</td>
-                  <td style={s.tdR}>{d.sched?excelDateToStr(d.sched.kom):""}</td>
-                  <td style={s.tdR}>{d.sched?excelDateToStr(d.sched.fat):""}</td>
-                  <td style={s.tdR}>{d.sched?excelDateToStr(d.sched.fca):""}</td>
-                  <td style={{...s.tdR,fontWeight:600}}>{d.sched?.lt ?? ""}</td>
-                  <td style={s.td}>
-                    <button style={s.editBtn} onClick={()=>{
-                      setDEditing(d);setDRk(d.routingKey);setDPlant(d.plant);setDPriority(d.priority);
-                      const seed: Record<string,{loadOv:string;startWk:string}> = {};
-                      for (const st of STAGES) {
-                        const ex = adjRows.find(r=>r.oppId===d.oppId&&r.lineId===d.lineId&&r.stage===st);
-                        seed[st] = { loadOv: ex?.loadOv ?? "", startWk: ex?.startWk ? formatWeek(ex.startWk) : "" };
-                      }
-                      setDStageOv(seed);
-                    }}>Edit</button>
-                  </td>
-                </tr>
-              ))}
+              {demandFiltered.map((d,i)=>{
+                const isAligned = d.alignFlag !== "" && d.alignFlag !== "0";
+                const dealAligned = alignedOppIds.has(d.oppId);
+                return (
+                  <tr key={i} style={dEditing?.lineId===d.lineId?s.trSelected:i%2===0?s.trEven:s.trOdd}>
+                    <td style={s.tdMono}>
+                      {/* DIFF: aligned deal indicator next to OppID */}
+                      {dealAligned && <span style={s.alignIndicator} title="Deal alignment active">⟳ </span>}
+                      {d.oppId}
+                    </td>
+                    <td style={{...s.td,maxWidth:90,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={d.equip}>{d.equip}</td>
+                    <td style={{...s.td,color:d.routingKey?"inherit":"#dc2626"}}>{d.routingKey||"—"}</td>
+                    <td style={{...s.td,color:d.plant?"inherit":"#dc2626"}}>{d.plant||"—"}</td>
+                    <td style={s.tdR}>{d.priority||""}</td>
+                    <td style={s.td}>
+                      {d.changeFlag&&<span style={{...s.badge,background:CHANGE_COLORS[d.changeFlag]??"#6b7280"}}>{d.changeFlag}</span>}
+                    </td>
+                    <td style={s.td}>{d.status?<span style={{...s.badge,background:STATUS_COLORS[d.status]??"#6b7280"}}>{STATUS_SHORT[d.status]??d.status.split(" ")[0]}</span>:<span style={{color:"#94a3b8"}}>—</span>}</td>
+                    <td style={s.tdR}>{excelDateToStr(d.oiDate)}</td>
+                    <td style={s.tdR}>{d.sched?excelDateToStr(d.sched.kom):""}</td>
+                    <td style={s.tdR}>{d.sched?excelDateToStr(d.sched.fat):""}</td>
+                    <td style={s.tdR}>{d.sched?excelDateToStr(d.sched.fca):""}</td>
+                    <td style={{...s.tdR,fontWeight:600}}>{d.sched?.lt ?? ""}</td>
+                    {/* DIFF: AlignFlag toggle button */}
+                    <td style={s.td}>
+                      <button
+                        style={isAligned ? s.alignBtnOn : s.alignBtnOff}
+                        title={isAligned ? "Click to remove alignment flag from this line" : "Click to flag this deal for LT alignment"}
+                        onClick={()=>toggleAlignFlag(d)}
+                      >
+                        {isAligned ? "⟳ On" : "Off"}
+                      </button>
+                    </td>
+                    <td style={s.td}>
+                      <button style={s.editBtn} onClick={()=>{
+                        setDEditing(d);setDRk(d.routingKey);setDPlant(d.plant);setDPriority(d.priority);
+                        // DIFF: seed AlignFlag checkbox from current line value
+                        setDAlignFlag(d.alignFlag !== "" && d.alignFlag !== "0");
+                        const seed: Record<string,{loadOv:string;startWk:string}> = {};
+                        for (const st of STAGES) {
+                          const ex = adjRows.find(r=>r.oppId===d.oppId&&r.lineId===d.lineId&&r.stage===st);
+                          seed[st] = { loadOv: ex?.loadOv ?? "", startWk: ex?.startWk ? formatWeek(ex.startWk) : "" };
+                        }
+                        setDStageOv(seed);
+                      }}>Edit</button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody></table>
           </div>
         </div>
@@ -794,7 +854,8 @@ export default function App() {
               {adjRows.map((r,i)=>(
                 <tr key={i} style={i%2===0?s.trEven:s.trOdd}>
                   <td style={s.tdMono}>{r.oppId}</td><td style={s.tdMono}>{r.lineId}</td>
-                  <td style={s.td}>{r.stage}</td><td style={s.tdR}>{r.loadOv||"—"}</td><td style={s.tdR}>{r.startWk?formatWeek(r.startWk):"—"}</td>
+                  <td style={s.td}>{r.stage}</td><td style={s.tdR}>{r.loadOv||"—"}</td>
+                  <td style={s.tdR}>{r.startWk?formatWeek(r.startWk):"—"}</td>
                   <td style={s.td}><button style={s.editBtn} onClick={()=>{setAOppId(r.oppId);setALineId(r.lineId);setAStage(r.stage);setALoadOv(r.loadOv);setAStartWk(formatWeek(r.startWk));}}>Edit</button></td>
                 </tr>
               ))}
@@ -820,6 +881,7 @@ export default function App() {
                 <tr key={i} style={i%2===0?s.trEven:s.trOdd}>
                   <td style={s.td}>{r.plant}</td><td style={s.td}>{r.stage}</td>
                   <td style={s.tdR}>{r.week?formatWeek(r.week):"—"}</td>
+                  <td style={s.tdR}>{r.cap}</td>
                   <td style={s.td}><button style={s.editBtn} onClick={()=>{setCoPlant(r.plant);setCoStage(r.stage);setCoWeek(formatWeek(r.week));setCoCap(r.cap);}}>Edit</button></td>
                 </tr>
               ))}
@@ -832,64 +894,74 @@ export default function App() {
 }
 
 const styles = {
-  shell:{fontFamily:"'Segoe UI',system-ui,sans-serif",fontSize:14,color:"#1e293b",background:"#f8fafc",minHeight:"100vh",display:"flex" as const,flexDirection:"column" as const},
+  shell:{fontFamily:"'Segoe UI',system-ui,sans-serif",fontSize:16,color:"#1e293b",background:"#f8fafc",minHeight:"100vh",display:"flex" as const,flexDirection:"column" as const},
   header:{background:"#0f2942",color:"#fff",padding:"10px 14px",display:"flex" as const,alignItems:"center" as const,justifyContent:"space-between" as const,flexShrink:0},
-  headerTitle:{fontSize:16,fontWeight:700,letterSpacing:"-0.01em"},
+  headerTitle:{fontSize:22,fontWeight:700,letterSpacing:"-0.01em"},
   modeToggle:{display:"flex" as const,gap:4},
-  modeBtn:{fontSize:12,padding:"4px 10px",borderRadius:6,border:"1px solid #334d6e",background:"transparent",color:"#94a3b8",cursor:"pointer" as const},
-  modeActive:{fontSize:12,padding:"4px 10px",borderRadius:6,border:"1px solid #38bdf8",background:"#0284c7",color:"#fff",cursor:"pointer" as const,fontWeight:600},
+  modeBtn:{fontSize:14,padding:"4px 10px",borderRadius:6,border:"1px solid #334d6e",background:"transparent",color:"#94a3b8",cursor:"pointer" as const},
+  modeActive:{fontSize:14,padding:"4px 10px",borderRadius:6,border:"1px solid #38bdf8",background:"#0284c7",color:"#fff",cursor:"pointer" as const,fontWeight:600},
   tabs:{display:"flex" as const,background:"#fff",borderBottom:"2px solid #e2e8f0",padding:"0 8px",flexShrink:0,overflowX:"auto" as const},
-  tab:{fontSize:13,padding:"9px 12px",border:"none",background:"none",color:"#64748b",cursor:"pointer" as const,borderBottom:"2px solid transparent",marginBottom:-2,whiteSpace:"nowrap" as const},
-  tabActive:{fontSize:13,padding:"9px 12px",border:"none",background:"none",color:"#0f2942",cursor:"pointer" as const,borderBottom:"2px solid #0284c7",marginBottom:-2,fontWeight:700,whiteSpace:"nowrap" as const},
-  refreshBtn:{marginLeft:"auto",fontSize:16,padding:"6px 10px",border:"none",background:"none",color:"#64748b",cursor:"pointer" as const},
-  statusBar:{fontSize:12,padding:"5px 14px",background:"#eff6ff",color:"#1d4ed8",borderBottom:"1px solid #bfdbfe",flexShrink:0},
-  errorBar:{fontSize:12,padding:"5px 14px",background:"#fef2f2",color:"#dc2626",borderBottom:"1px solid #fecaca",flexShrink:0},
-  actionBar:{fontSize:12,padding:"5px 14px",background:"#f0fdf4",color:"#15803d",borderBottom:"1px solid #bbf7d0",flexShrink:0},
+  tab:{fontSize:14,padding:"9px 12px",border:"none",background:"none",color:"#64748b",cursor:"pointer" as const,borderBottom:"2px solid transparent",marginBottom:-2,whiteSpace:"nowrap" as const},
+  tabActive:{fontSize:14,padding:"9px 12px",border:"none",background:"none",color:"#0f2942",cursor:"pointer" as const,borderBottom:"2px solid #0284c7",marginBottom:-2,fontWeight:700,whiteSpace:"nowrap" as const},
+  refreshBtn:{marginLeft:"auto",fontSize:18,padding:"6px 10px",border:"none",background:"none",color:"#64748b",cursor:"pointer" as const},
+  statusBar:{fontSize:14,padding:"5px 14px",background:"#eff6ff",color:"#1d4ed8",borderBottom:"1px solid #bfdbfe",flexShrink:0},
+  errorBar:{fontSize:14,padding:"5px 14px",background:"#fef2f2",color:"#dc2626",borderBottom:"1px solid #fecaca",flexShrink:0},
+  actionBar:{fontSize:14,padding:"5px 14px",background:"#f0fdf4",color:"#15803d",borderBottom:"1px solid #bbf7d0",flexShrink:0},
   content:{padding:12,flex:1,overflowY:"auto" as const},
   filterGrid:{display:"grid" as const,gridTemplateColumns:"repeat(auto-fit,minmax(110px,1fr))",gap:12,marginBottom:12},
   filterGrid2:{display:"grid" as const,gridTemplateColumns:"1.1fr 1fr",gap:14,marginBottom:12},
   runRow:{display:"flex" as const,gap:8,flexWrap:"wrap" as const,marginBottom:14},
-  runBtn:{fontSize:13,padding:"8px 14px",borderRadius:8,border:"1px solid #0284c7",background:"#eff6ff",color:"#0284c7",cursor:"pointer" as const,fontWeight:600},
+  runBtn:{fontSize:14,padding:"8px 14px",borderRadius:8,border:"1px solid #0284c7",background:"#eff6ff",color:"#0284c7",cursor:"pointer" as const,fontWeight:600},
   filterRow:{display:"flex" as const,gap:10,flexWrap:"wrap" as const,marginBottom:10},
-  fieldLbl:{fontSize:12,color:"#64748b",fontWeight:600,display:"flex" as const,flexDirection:"column" as const,gap:3,flex:1,minWidth:90},
-  sectionLbl:{fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase" as const,letterSpacing:"0.05em",marginBottom:6},
-  sel:{fontSize:14,padding:"6px 8px",borderRadius:7,border:"1px solid #cbd5e1",background:"#fff",minWidth:90},
-  inp:{fontSize:14,padding:"6px 8px",borderRadius:7,border:"1px solid #cbd5e1",background:"#fff",width:"100%",boxSizing:"border-box" as const},
+  fieldLbl:{fontSize:14,color:"#64748b",fontWeight:600,display:"flex" as const,flexDirection:"column" as const,gap:3,flex:1,minWidth:90},
+  sectionLbl:{fontSize:13,fontWeight:700,color:"#64748b",textTransform:"uppercase" as const,letterSpacing:"0.05em",marginBottom:6},
+  sel:{fontSize:16,padding:"6px 8px",borderRadius:7,border:"1px solid #cbd5e1",background:"#fff",minWidth:90},
+  inp:{fontSize:16,padding:"6px 8px",borderRadius:7,border:"1px solid #cbd5e1",background:"#fff",width:"100%",boxSizing:"border-box" as const},
   multiBox:{maxHeight:110,overflowY:"auto" as const,border:"1px solid #e2e8f0",borderRadius:7,padding:"4px 6px",background:"#fff"},
-  checkRow:{display:"flex" as const,alignItems:"center" as const,gap:5,fontSize:13,padding:"2px 0",cursor:"pointer" as const},
+  checkRow:{display:"flex" as const,alignItems:"center" as const,gap:5,fontSize:14,padding:"2px 0",cursor:"pointer" as const},
   dot:{width:10,height:10,borderRadius:2,display:"inline-block" as const,flexShrink:0},
   legend:{display:"flex" as const,gap:10,flexWrap:"wrap" as const,marginBottom:8},
-  legendItem:{display:"flex" as const,alignItems:"center" as const,gap:4,fontSize:12,color:"#64748b"},
+  legendItem:{display:"flex" as const,alignItems:"center" as const,gap:4,fontSize:14,color:"#64748b"},
   heatGrid:{display:"flex" as const,flexWrap:"wrap" as const,gap:4},
   cell:{borderRadius:7,padding:"5px 7px",minWidth:68,cursor:"default" as const,border:"1px solid rgba(0,0,0,0.06)"},
-  cellWk:{fontSize:10,fontWeight:600,marginBottom:1},
-  cellUtil:{fontSize:14,fontWeight:700},
-  cellOver:{fontSize:10,color:"#fef2f2",marginTop:1},
+  cellWk:{fontSize:13,fontWeight:600,marginBottom:1},
+  cellUtil:{fontSize:16,fontWeight:700},
+  cellOver:{fontSize:13,color:"#fef2f2",marginTop:1},
   tableScroll:{overflowX:"auto" as const,overflowY:"auto" as const,maxHeight:360},
   tableScrollFlex:{overflowX:"auto" as const,overflowY:"auto" as const,maxHeight:"60vh"},
-  table:{width:"100%",borderCollapse:"collapse" as const,fontSize:13},
+  table:{width:"100%",borderCollapse:"collapse" as const,fontSize:14},
   th:{padding:"6px 8px",background:"#0f2942",color:"#fff",fontWeight:600,textAlign:"left" as const,whiteSpace:"nowrap" as const,position:"sticky" as const,top:0,zIndex:1},
   thR:{padding:"6px 8px",background:"#0f2942",color:"#fff",fontWeight:600,textAlign:"right" as const,whiteSpace:"nowrap" as const,position:"sticky" as const,top:0,zIndex:1},
   td:{padding:"5px 8px",borderBottom:"1px solid #f1f5f9",verticalAlign:"middle" as const},
   tdR:{padding:"5px 8px",borderBottom:"1px solid #f1f5f9",textAlign:"right" as const,verticalAlign:"middle" as const},
-  tdMono:{padding:"5px 8px",borderBottom:"1px solid #f1f5f9",fontFamily:"monospace",fontSize:12},
+  tdMono:{padding:"5px 8px",borderBottom:"1px solid #f1f5f9",fontFamily:"monospace",fontSize:14},
   trEven:{background:"#fff"},
   trOdd:{background:"#f8fafc"},
   trSelected:{background:"#eff6ff"},
-  badge:{fontSize:11,color:"#fff",padding:"2px 6px",borderRadius:10,display:"inline-block" as const,whiteSpace:"nowrap" as const,maxWidth:100,overflow:"hidden" as const,textOverflow:"ellipsis" as const},
+  badge:{fontSize:13,color:"#fff",padding:"2px 6px",borderRadius:10,display:"inline-block" as const,whiteSpace:"nowrap" as const,maxWidth:100,overflow:"hidden" as const,textOverflow:"ellipsis" as const},
   editCard:{background:"#fff",border:"1px solid #e2e8f0",borderRadius:10,padding:12,marginBottom:10},
-  editTitle:{fontSize:14,fontWeight:700,color:"#0f2942",marginBottom:10},
-  changedNote:{fontSize:12,color:"#854d0e",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:7,padding:"6px 10px",marginBottom:10,lineHeight:1.5},
-  saveBtn:{fontSize:13,padding:"8px 16px",borderRadius:8,border:"none",background:"#0f2942",color:"#fff",cursor:"pointer" as const,fontWeight:600},
-  cancelBtn:{fontSize:13,padding:"8px 16px",borderRadius:8,border:"1px solid #cbd5e1",background:"#fff",color:"#64748b",cursor:"pointer" as const},
-  editBtn:{fontSize:12,padding:"4px 10px",borderRadius:6,border:"1px solid #0284c7",background:"#eff6ff",color:"#0284c7",cursor:"pointer" as const,fontWeight:600},
-  empty:{color:"#94a3b8",fontSize:14,textAlign:"center" as const,padding:"32px 0",lineHeight:1.8},
-  shotBtn:{fontSize:12,padding:"6px 12px",borderRadius:7,border:"1px solid #cbd5e1",background:"#fff",color:"#374151",cursor:"pointer" as const,fontWeight:600},
+  editTitle:{fontSize:16,fontWeight:700,color:"#0f2942",marginBottom:10},
+  changedNote:{fontSize:14,color:"#854d0e",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:7,padding:"6px 10px",marginBottom:10,lineHeight:1.5},
+  saveBtn:{fontSize:14,padding:"8px 16px",borderRadius:8,border:"none",background:"#0f2942",color:"#fff",cursor:"pointer" as const,fontWeight:600},
+  cancelBtn:{fontSize:14,padding:"8px 16px",borderRadius:8,border:"1px solid #cbd5e1",background:"#fff",color:"#64748b",cursor:"pointer" as const},
+  editBtn:{fontSize:13,padding:"4px 10px",borderRadius:6,border:"1px solid #0284c7",background:"#eff6ff",color:"#0284c7",cursor:"pointer" as const,fontWeight:600},
+  empty:{color:"#94a3b8",fontSize:16,textAlign:"center" as const,padding:"32px 0",lineHeight:1.8},
+  shotBtn:{fontSize:14,padding:"6px 12px",borderRadius:7,border:"1px solid #cbd5e1",background:"#fff",color:"#374151",cursor:"pointer" as const,fontWeight:600},
   coInlineCard:{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,padding:10,marginBottom:14},
-  saveBtnInline:{fontSize:13,padding:"7px 14px",borderRadius:7,border:"none",background:"#854d0e",color:"#fff",cursor:"pointer" as const,fontWeight:600,alignSelf:"flex-end" as const,height:34},
+  saveBtnInline:{fontSize:14,padding:"7px 14px",borderRadius:7,border:"none",background:"#854d0e",color:"#fff",cursor:"pointer" as const,fontWeight:600,alignSelf:"flex-end" as const,height:36},
   stageRow:{display:"flex" as const,alignItems:"center" as const,gap:8,padding:"5px 0",borderBottom:"1px solid #f1f5f9"},
-  stageName:{fontSize:13,fontWeight:600,color:"#0f2942",width:70,flexShrink:0},
-  stageStd:{fontSize:11,color:"#94a3b8",width:64,flexShrink:0},
-  inpSm:{fontSize:13,padding:"5px 7px",borderRadius:6,border:"1px solid #cbd5e1",background:"#fff",flex:1,minWidth:0},
-  versionTag:{fontSize:11,fontWeight:400,color:"#94a3b8",marginLeft:6},
+  stageName:{fontSize:14,fontWeight:600,color:"#0f2942",width:70,flexShrink:0},
+  stageStd:{fontSize:13,color:"#94a3b8",width:64,flexShrink:0},
+  inpSm:{fontSize:14,padding:"5px 7px",borderRadius:6,border:"1px solid #cbd5e1",background:"#fff",flex:1,minWidth:0},
+  versionTag:{fontSize:13,fontWeight:400,color:"#94a3b8",marginLeft:6},
+  // DIFF: AlignFlag styles
+  alignFlagRow:{background:"#f0f9ff",border:"1px solid #bae6fd",borderRadius:8,padding:"10px 12px",marginBottom:10,marginTop:4},
+  alignFlagLabel:{display:"flex" as const,alignItems:"flex-start" as const,gap:0,cursor:"pointer" as const,fontSize:15},
+  alignFlagText:{fontWeight:700,color:"#0284c7",whiteSpace:"nowrap" as const},
+  alignFlagHint:{fontSize:13,color:"#64748b",marginLeft:6,lineHeight:1.5},
+  alignBtnOn:{fontSize:13,padding:"3px 8px",borderRadius:6,border:"1px solid #0284c7",background:"#0284c7",color:"#fff",cursor:"pointer" as const,fontWeight:700,whiteSpace:"nowrap" as const},
+  alignBtnOff:{fontSize:13,padding:"3px 8px",borderRadius:6,border:"1px solid #cbd5e1",background:"#f8fafc",color:"#94a3b8",cursor:"pointer" as const,fontWeight:400,whiteSpace:"nowrap" as const},
+  alignIndicator:{color:"#0284c7",fontWeight:700,fontSize:14},
+  alignLegend:{fontSize:13,color:"#64748b",marginLeft:6,fontWeight:400,textTransform:"none" as const,letterSpacing:0},
+  alignDot:{color:"#0284c7",fontWeight:700},
 };
