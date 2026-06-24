@@ -206,8 +206,12 @@ export default function App() {
   const [dPlanSpec,setDPlanSpec] = useState(false);
   // DIFF: OIDatePlanned edit state (string for date input)
   const [dOiPlanned,setDOiPlanned] = useState("");
+  // DIFF: spread OIDatePlanned to all deal lines — ticked by default
+  const [dOiSpread,setDOiSpread] = useState(true);
   const [dSaving,setDSaving] = useState(false);
   const [dStageOv,setDStageOv] = useState<Record<string,{loadOv:string;startWk:string}>>({});
+  // DIFF: per-stage delete confirmation state in demand edit card
+  const [dStagePendingDelete,setDStagePendingDelete] = useState<string|null>(null);
   // adjustments
   const [aOppId,setAOppId] = useState("");
   const [aLineId,setALineId] = useState("");
@@ -428,12 +432,27 @@ export default function App() {
       await writeCellInTable("Demand",dEditing.rowIdx,"AlignFlag",dAlignFlag?"1":"",h);
       await writeCellInTable("Demand",dEditing.rowIdx,"PlanSpeculative",dPlanSpec?"1":"",h);
       // DIFF: persist OIDatePlanned — write serial or blank to inherit from OIDate
-      if(dOiPlanned!==""){
-        const serial=strToExcelDate(dOiPlanned);
-        if(serial>0)await writeCellInTable("Demand",dEditing.rowIdx,"OIDatePlanned",serial,h);
+      const serial = dOiPlanned !== "" ? strToExcelDate(dOiPlanned) : 0;
+      if (dOiPlanned !== "" && serial > 0) {
+        if (dOiSpread) {
+          // DIFF: spread to all lines of this deal in one Excel.run batch
+          const dealLines = demand.filter(d => d.oppId === dEditing.oppId);
+          const oiColIdx = demandHeaders.indexOf("OIDatePlanned");
+          if (oiColIdx >= 0) {
+            await Excel.run(async ctx => {
+              const body = ctx.workbook.tables.getItem("Demand").getDataBodyRange();
+              for (const dl of dealLines) {
+                body.getCell(dl.rowIdx, oiColIdx).values = [[serial]];
+              }
+              await ctx.sync();
+            });
+          }
+        } else {
+          await writeCellInTable("Demand", dEditing.rowIdx, "OIDatePlanned", serial, h);
+        }
       } else {
-        // blank → clears the override, Sync will refill from OIDate on next run
-        await writeCellInTable("Demand",dEditing.rowIdx,"OIDatePlanned","",h);
+        // blank → clears the override for this line; Sync will refill from OIDate on next run
+        await writeCellInTable("Demand", dEditing.rowIdx, "OIDatePlanned", "", h);
       }
       for(const st of STAGES){
         const ov=dStageOv[st];
@@ -443,8 +462,25 @@ export default function App() {
         if(ex)await updateRowInTable("Adjustments",ex.rowIdx,row);
         else await appendRowToTable("Adjustments",row);
       }
-      setActionNote(`Saved ${dEditing.oppId}`); setDEditing(null); setDStageOv({}); await load();
+      setActionNote(`Saved ${dEditing.oppId}`); setDEditing(null); setDStageOv({}); setDStagePendingDelete(null); await load();
     }catch(e){setActionNote(`Error: ${String(e)}`);}
+    setDSaving(false);
+  };
+
+  // DIFF: delete a single stage adjustment from the Demand edit card
+  const deleteAdjForStage = async (stage: string) => {
+    if (!dEditing) return;
+    const ex = adjRows.find(r => r.oppId === dEditing.oppId && r.lineId === dEditing.lineId && r.stage === stage);
+    if (!ex) return;
+    setDSaving(true); setActionNote("");
+    try {
+      await deleteRowFromTable("Adjustments", ex.rowIdx);
+      setActionNote(`Deleted ${stage} adjustment for ${dEditing.oppId}/${dEditing.lineId}.`);
+      // Clear the stage override in local state too
+      setDStageOv(prev => ({ ...prev, [stage]: { loadOv: "", startWk: "" } }));
+      setDStagePendingDelete(null);
+      await load();
+    } catch(e) { setActionNote(`Error: ${String(e)}`); }
     setDSaving(false);
   };
 
@@ -745,6 +781,11 @@ export default function App() {
                     borderColor: dOiPlanned && dOiPlanned !== excelDateToStr(dEditing.oiDate) ? "#ca8a04" : "#cbd5e1",
                     background: dOiPlanned && dOiPlanned !== excelDateToStr(dEditing.oiDate) ? "#fffbeb" : "#fff",
                   }} type="date" value={dOiPlanned} onChange={e=>setDOiPlanned(e.target.value)}/>
+                  {/* DIFF: spread to deal checkbox — ticked by default */}
+                  <label style={s.oiSpreadLabel}>
+                    <input type="checkbox" checked={dOiSpread} onChange={e=>setDOiSpread(e.target.checked)} style={{marginRight:5}}/>
+                    <span>Apply to all equipment in deal <strong>{dEditing.oppId}</strong></span>
+                  </label>
                 </div>
               </div>
 
@@ -772,18 +813,32 @@ export default function App() {
               {STAGES.map(st=>{
                 const std=dRk?(routingLoads[dRk]?.[st]??0):(dEditing.routingKey?(routingLoads[dEditing.routingKey]?.[st]??0):0);
                 const ov=dStageOv[st]??{loadOv:"",startWk:""};
+                // DIFF: check if an existing adj row exists for this stage
+                const exAdj=adjRows.find(r=>r.oppId===dEditing.oppId&&r.lineId===dEditing.lineId&&r.stage===st);
+                const isPendingDelete=dStagePendingDelete===st;
                 return(
-                  <div key={st} style={s.stageRow}>
+                  <div key={st} style={{...s.stageRow,flexWrap:"wrap" as const,background:isPendingDelete?"#fef2f2":"inherit"}}>
                     <div style={s.stageName}>{st}</div>
                     <div style={s.stageStd}>std: {std}</div>
                     <input style={s.inpSm} type="number" placeholder={`load (std ${std})`} value={ov.loadOv} onChange={e=>setDStageOv({...dStageOv,[st]:{...ov,loadOv:e.target.value}})}/>
                     <input style={s.inpSm} placeholder="start wk (YYYY-WW)" value={ov.startWk} onChange={e=>setDStageOv({...dStageOv,[st]:{...ov,startWk:e.target.value}})}/>
+                    {/* DIFF: delete adj button — only shown when existing adj row exists */}
+                    {exAdj&&!isPendingDelete&&(
+                      <button style={s.stageDeleteSoft} title="Delete this stage adjustment" onClick={()=>setDStagePendingDelete(st)}>✕</button>
+                    )}
+                    {exAdj&&isPendingDelete&&(
+                      <div style={{display:"flex",gap:4,alignItems:"center",width:"100%",paddingTop:4}}>
+                        <span style={{fontSize:13,color:"#dc2626"}}>Delete {st} adjustment?</span>
+                        <button style={s.deleteBtnHard} onClick={()=>deleteAdjForStage(st)} disabled={dSaving}>Confirm</button>
+                        <button style={s.cancelBtn} onClick={()=>setDStagePendingDelete(null)}>Cancel</button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
               <div style={{display:"flex",gap:8,marginTop:10}}>
                 <button style={s.saveBtn} onClick={saveDemandLine} disabled={dSaving}>{dSaving?"Saving…":"Save"}</button>
-                <button style={s.cancelBtn} onClick={()=>{setDEditing(null);setDStageOv({});}}>Cancel</button>
+                <button style={s.cancelBtn} onClick={()=>{setDEditing(null);setDStageOv({});setDStagePendingDelete(null);}}>Cancel</button>
               </div>
             </div>
           )}
@@ -856,6 +911,9 @@ export default function App() {
                         setDAlignFlag(d.alignFlag!==""&&d.alignFlag!=="0");
                         setDPlanSpec(d.planSpeculative!==""&&d.planSpeculative!=="0");
                         setDOiPlanned(d.oiDatePlanned?excelDateToStr(d.oiDatePlanned):"");
+                        // DIFF: reset spread checkbox (default on) and clear any pending delete
+                        setDOiSpread(true);
+                        setDStagePendingDelete(null);
                         const seed:Record<string,{loadOv:string;startWk:string}>={};
                         for(const st of STAGES){
                           const ex=adjRows.find(r=>r.oppId===d.oppId&&r.lineId===d.lineId&&r.stage===st);
@@ -1060,4 +1118,8 @@ const styles = {
   oiBlock:{display:"flex" as const,flexDirection:"column" as const,gap:4,flex:1,minWidth:140},
   oiValue:{fontSize:16,fontWeight:600,color:"#1e293b",padding:"6px 0"},
   oiHint:{fontSize:12,fontWeight:400,color:"#94a3b8",textTransform:"none" as const,letterSpacing:0},
+  // DIFF: spread checkbox label under OI Planned input
+  oiSpreadLabel:{display:"flex" as const,alignItems:"center" as const,fontSize:13,color:"#64748b",marginTop:5,cursor:"pointer" as const},
+  // DIFF: small stage-level delete button (soft, shows ✕)
+  stageDeleteSoft:{fontSize:12,padding:"2px 7px",borderRadius:5,border:"1px solid #fca5a5",background:"#fff",color:"#dc2626",cursor:"pointer" as const,fontWeight:600,flexShrink:0},
 };
