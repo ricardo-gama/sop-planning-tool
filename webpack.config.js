@@ -71,6 +71,12 @@ module.exports = async (env, options) => {
         template: "./src/taskpane/taskpane.html",
         chunks: ["polyfill", "taskpane", "react"],
       }),
+      // index.html so GitHub Pages serves the root URL correctly
+      new HtmlWebpackPlugin({
+        filename: "index.html",
+        template: "./src/taskpane/taskpane.html",
+        chunks: ["polyfill", "taskpane", "react"],
+      }),
       new CopyWebpackPlugin({
         patterns: [
           {
