@@ -328,6 +328,7 @@ export default function App() {
   const [plants,setPlants] = useState<string[]>([]);
   const [weekLabelToIndex,setWeekLabelToIndex] = useState<Record<string,number>>({});
   const [indexToWeekLabel,setIndexToWeekLabel] = useState<Record<string,string>>({});
+  const [weekToStartSerial,setWeekToStartSerial] = useState<Record<number,number>>({});
   const [routingKeys,setRoutingKeys] = useState<string[]>([]);
   const [routingLoads,setRoutingLoads] = useState<Record<string,Record<string,number>>>({});
   // graph
@@ -479,14 +480,14 @@ export default function App() {
       if(!gPlants.length&&pl.length)setGPlants([pl[0]]);
       if(!coPlant&&pl.length)setCoPlant(pl[0]);
       const wIdx=calData.headers.indexOf("WeekIndex"),wStart=calData.headers.indexOf("WeekStart");
-      const l2i:Record<string,number>={},i2l:Record<string,string>={};
+      const l2i:Record<string,number>={},i2l:Record<string,string>={},w2s:Record<number,number>={};
       if(wIdx>=0&&wStart>=0){
         for(const r of calData.rows){
           const idx=Number(r[wIdx]),start=Number(r[wStart]);
-          if(idx>=1&&start){const lbl=isoWeekLabel(start);l2i[lbl]=idx;i2l[String(idx)]=lbl;}
+          if(idx>=1&&start){const lbl=isoWeekLabel(start);l2i[lbl]=idx;i2l[String(idx)]=lbl;w2s[idx]=start;}
         }
       }
-      setWeekLabelToIndex(l2i); setIndexToWeekLabel(i2l);
+      setWeekLabelToIndex(l2i); setIndexToWeekLabel(i2l); setWeekToStartSerial(w2s);
       setLoadMsg(`Loaded ${rData.rows.length} capacity rows · ${sData.rows.length} schedule lines`);
     }catch(e:unknown){setErrMsg(String(e));setLoadMsg("");}
     setLoading(false);
@@ -825,22 +826,120 @@ export default function App() {
           )}
           {heatWeeks.length>0&&(
             <div style={{marginTop:14}}>
-              <div style={s.sectionLbl}>Breakdown{hSelWeek?` — ${hSelWeek}`:""}</div>
-              <div style={s.tableScroll}>
-                <table style={s.table}><thead><tr>
-                  <th style={s.th}>Week</th><th style={s.th}>Status</th>
-                  <th style={s.thR}>Load</th><th style={s.thR}>Cap</th><th style={s.thR}>Util%</th>
-                </tr></thead><tbody>
-                  {heatRows.filter(r=>!hSelWeek||r.week===hSelWeek).sort((a,b)=>a.week.localeCompare(b.week)||a.status.localeCompare(b.status)).slice(0,200).map((r,i)=>(
-                    <tr key={i} style={i%2===0?s.trEven:s.trOdd}>
-                      <td style={s.td}>{r.week}</td>
-                      <td style={s.td}><span style={{...s.badge,background:STATUS_COLORS[r.status]??"#6b7280"}}>{STATUS_SHORT[r.status]??r.status}</span></td>
-                      <td style={s.tdR}>{Math.round(r.total)}</td><td style={s.tdR}>{r.cap}</td>
-                      <td style={{...s.tdR,color:r.overload>0?"#dc2626":"inherit",fontWeight:r.overload>0?700:400}}>{r.util}%</td>
-                    </tr>
-                  ))}
-                </tbody></table>
+              <div style={s.sectionLbl}>
+                {hSelWeek ? `Deals impacting ${hPlant} · ${hStage} · ${hSelWeek}` : `Breakdown — ${hPlant} · ${hStage}`}
               </div>
+              {hSelWeek ? (() => {
+                // Deal-level breakdown for selected week
+                // Find schedule lines whose stage window covers the selected week
+                const selWeekIdx = weekLabelToIndex[hSelWeek] ?? 0;
+                const getStageWindow = (sc: SchedRow): { start: number; end: number } => {
+                  switch(hStage) {
+                    case "Assembly": return { start: sc.asmStart, end: sc.asmFinish };
+                    case "Testing":  return { start: sc.tstStart, end: sc.tstFinish };
+                    case "ESL":      return { start: sc.oiDatePlanned||sc.oiDate, end: sc.fca };
+                    case "CTO":      return { start: sc.frozen, end: sc.finalBom };
+                    case "FAT":      return { start: sc.fat, end: sc.fat };
+                    default:         return { start: 0, end: 0 };
+                  }
+                };
+                // Convert week index to serial range for comparison
+                const selWeekSerial = weekToStartSerial[selWeekIdx] ?? 0;
+                const selWeekEndSerial = selWeekSerial + 6;
+
+                // Filter schedule lines matching plant + stage window covers selected week
+                const impactingLines = schedule.filter(sc => {
+                  if (sc.plant !== hPlant) return false;
+                  const { start, end } = getStageWindow(sc);
+                  if (!start || !end) return false;
+                  // window overlaps week if start <= weekEnd AND end >= weekStart
+                  return start <= selWeekEndSerial && end >= selWeekSerial;
+                });
+
+                // Backlog rows for this week (from Results — no deal detail)
+                const backlogRows = heatRows.filter(r => r.week === hSelWeek && r.status === "Backlog");
+                const backlogTotal = backlogRows.reduce((sum, r) => sum + r.total, 0);
+
+                // Group impacting lines by status
+                const byStatus: Record<string, SchedRow[]> = {};
+                for (const sc of impactingLines) {
+                  const st = sc.status;
+                  if (!byStatus[st]) byStatus[st] = [];
+                  byStatus[st].push(sc);
+                }
+                const statusGroups = Object.entries(byStatus).sort((a, b) => {
+                  const ra = STATUS_LIST.indexOf(a[0]);
+                  const rb = STATUS_LIST.indexOf(b[0]);
+                  return (ra === -1 ? 99 : ra) - (rb === -1 ? 99 : rb);
+                });
+
+                return (
+                  <div style={s.tableScroll}>
+                    <table style={s.table}><thead><tr>
+                      <th style={s.th}>Status</th>
+                      <th style={s.th}>OppID</th>
+                      <th style={s.th}>Equipment</th>
+                      <th style={s.thR}>OI Planned</th>
+                      <th style={s.thR}>Asm Start</th>
+                      <th style={s.thR}>Asm Finish</th>
+                      <th style={s.thR}>FCA</th>
+                      <th style={s.thR}>LT</th>
+                    </tr></thead><tbody>
+                      {/* Backlog row first */}
+                      {backlogTotal > 0 && (
+                        <tr style={s.trEven}>
+                          <td style={s.td} colSpan={2}><span style={{...s.badge,background:"#1e293b"}}>Backlog</span></td>
+                          <td style={s.td}>Pre-committed load</td>
+                          <td style={s.tdR} colSpan={5}>{Math.round(backlogTotal)} units</td>
+                        </tr>
+                      )}
+                      {statusGroups.map(([status, lines]) => (<>
+                        {/* Status subtotal header row */}
+                        <tr key={`sub-${status}`} style={{background:"#f1f5f9"}}>
+                          <td style={{...s.td,fontWeight:700}} colSpan={2}>
+                            <span style={{...s.badge,background:STATUS_COLORS[status]??"#6b7280"}}>{STATUS_SHORT[status]??status}</span>
+                            <span style={{marginLeft:8,fontSize:13,color:"#475569"}}>{lines.length} line{lines.length!==1?"s":""}</span>
+                          </td>
+                          <td style={s.td} colSpan={6}/>
+                        </tr>
+                        {/* Individual deal lines */}
+                        {lines.map((sc, i) => (
+                          <tr key={`${sc.lineId}-${i}`} style={i%2===0?s.trEven:s.trOdd}>
+                            <td style={s.td}/>
+                            <td style={s.tdMono}>{sc.oppId}</td>
+                            <td style={{...s.td,maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={sc.equip}>{sc.equip}</td>
+                            <td style={s.tdR}>{excelDateToStr(sc.oiDatePlanned||sc.oiDate)}</td>
+                            <td style={s.tdR}>{weekLabel(sc.asmStart)}</td>
+                            <td style={s.tdR}>{weekLabel(sc.asmFinish)}</td>
+                            <td style={s.tdR}>{excelDateToStr(sc.fca)}</td>
+                            <td style={{...s.tdR,fontWeight:600}}>{sc.lt}</td>
+                          </tr>
+                        ))}
+                      </>))}
+                      {impactingLines.length === 0 && backlogTotal === 0 && (
+                        <tr><td colSpan={8} style={{...s.td,color:"#94a3b8",textAlign:"center"}}>No planned lines found for this week.</td></tr>
+                      )}
+                    </tbody></table>
+                  </div>
+                );
+              })() : (
+                // No week selected — show status totals across all weeks
+                <div style={s.tableScroll}>
+                  <table style={s.table}><thead><tr>
+                    <th style={s.th}>Week</th><th style={s.th}>Status</th>
+                    <th style={s.thR}>Load</th><th style={s.thR}>Cap</th><th style={s.thR}>Util%</th>
+                  </tr></thead><tbody>
+                    {heatRows.sort((a,b)=>a.week.localeCompare(b.week)||a.status.localeCompare(b.status)).slice(0,200).map((r,i)=>(
+                      <tr key={i} style={i%2===0?s.trEven:s.trOdd}>
+                        <td style={s.td}>{r.week}</td>
+                        <td style={s.td}><span style={{...s.badge,background:STATUS_COLORS[r.status]??"#6b7280"}}>{STATUS_SHORT[r.status]??r.status}</span></td>
+                        <td style={s.tdR}>{Math.round(r.total)}</td><td style={s.tdR}>{r.cap}</td>
+                        <td style={{...s.tdR,color:r.overload>0?"#dc2626":"inherit",fontWeight:r.overload>0?700:400}}>{r.util}%</td>
+                      </tr>
+                    ))}
+                  </tbody></table>
+                </div>
+              )}
             </div>
           )}
         </div>
