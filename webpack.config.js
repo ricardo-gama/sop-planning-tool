@@ -25,6 +25,11 @@ module.exports = async (env, options) => {
         import: ["./src/taskpane/index.tsx", "./src/taskpane/taskpane.html"],
         dependOn: "react",
       },
+      // check this later
+      "demand/taskpane": {
+        import: ["./src-demand/index.tsx", "./src-demand/taskpane.html"],
+        dependOn: "react",
+      },
       commands: "./src/commands/commands.ts",
     },
     // output: {
@@ -40,16 +45,14 @@ module.exports = async (env, options) => {
     module: {
       rules: [
         {
-          test: /\.ts$/,
-          exclude: /node_modules/,
-          use: {
-            loader: "babel-loader",
-          },
+          test: /\.tsx?$/,
+          exclude: [/node_modules/, /office scripts/],
+          use: ["ts-loader"],
         },
         {
-          test: /\.tsx?$/,
-          exclude: /node_modules/,
-          use: ["ts-loader"],
+          test: /\.ts$/,
+          exclude: [/node_modules/, /office scripts/],
+          use: { loader: "babel-loader" },
         },
         {
           test: /\.html$/,
@@ -76,6 +79,11 @@ module.exports = async (env, options) => {
         filename: "index.html",
         template: "./src/taskpane/taskpane.html",
         chunks: ["polyfill", "taskpane", "react"],
+      }),
+      new HtmlWebpackPlugin({
+        filename: "demand/index.html",
+        template: "./src-demand/taskpane.html",
+        chunks: ["polyfill", "demand/taskpane", "react"],
       }),
       new CopyWebpackPlugin({
         patterns: [

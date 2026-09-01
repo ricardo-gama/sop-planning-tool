@@ -8,29 +8,34 @@
     "jsx": "react",
     "module": "ES2020",
     "moduleResolution": "node",
-    "noImplicitReturns": true,
-    "noUnusedParameters": true,
+    "noImplicitReturns": false,
+    "noUnusedParameters": false,
     "outDir": "dist",
     "removeComments": false,
     "sourceMap": true,
-    "target": "es5",
+    "target": "es2017",
     "lib": [
-      "es7",
+      "es2017",
       "dom"
     ],
     "pretty": true,
     "typeRoots": [
       "node_modules/@types"
-    ]
+    ],
+    "skipLibCheck": true
   },
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "office scripts"
   ],
   "compileOnSave": false,
   "buildOnSave": false,
   "ts-node": { 
     "compilerOptions": {
-      "module": "commonjs"
+      "module": "commonjs",
+      "noImplicitReturns": false,
+      "strictFunctionTypes": false,
+      "strictNullChecks": false
     },
     "files": true 
   }

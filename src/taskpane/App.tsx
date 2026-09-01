@@ -1,4 +1,4 @@
-/// <reference types="office-js" />
+﻿/// <reference types="office-js" />
 import * as React from "react";
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
@@ -154,7 +154,7 @@ async function downloadChartAsPng(containerEl:HTMLElement,filename:string):Promi
   bg.setAttribute("width","100%"); bg.setAttribute("height","100%"); bg.setAttribute("fill","#ffffff");
   svgClone.insertBefore(bg,svgClone.firstChild);
   const svg64 = btoa(unescape(encodeURIComponent(new XMLSerializer().serializeToString(svgClone))));
-  return new Promise((resolve,reject) => {
+  return new Promise<void>((resolve,reject) => {
     const img = new Image();
     img.onload = () => {
       try {
@@ -166,7 +166,7 @@ async function downloadChartAsPng(containerEl:HTMLElement,filename:string):Promi
         const link=document.createElement("a");
         link.href=canvas.toDataURL("image/png"); link.download=filename;
         document.body.appendChild(link); link.click(); document.body.removeChild(link);
-        resolve();
+        resolve(undefined);
       } catch(e){reject(e);}
     };
     img.onerror=()=>reject(new Error("Could not render chart."));
@@ -315,8 +315,8 @@ function StageAdjRow({
 export default function App() {
   const [tab,setTab] = useState<Tab>("graph");
   const [mode,setMode] = useState<Mode>("unconstrained"); // default unconstrained
-  const [loadMsg,setLoadMsg] = useState("");
-  const [errMsg,setErrMsg] = useState("");
+  const [loadMsg,setLoadMsg] = useState<string>("");
+  const [errMsg,setErrMsg] = useState<string>("");
   const [loading,setLoading] = useState(false);
   const [results,setResults] = useState<ResultRow[]>([]);
   const [schedule,setSchedule] = useState<SchedRow[]>([]);
@@ -381,7 +381,7 @@ export default function App() {
   const [coWeek,setCoWeek] = useState("");
   const [coCap,setCoCap] = useState("");
   const [coSaving,setCoSaving] = useState(false);
-  const [actionNote,setActionNote] = useState("");
+  const [actionNote,setActionNote] = useState<string>("");
   const chartRef = useRef<HTMLDivElement>(null);
   const [shotBusy,setShotBusy] = useState(false);
 
@@ -402,21 +402,25 @@ export default function App() {
     try {
       const rTbl = mode==="constrained"?"Results":"ResultsUnconstrained";
       const sTbl = mode==="constrained"?"Schedule":"ScheduleUnconstrained";
-      const [rData,sData,dData,aData,cData,rtData,cbData,calData] = await Promise.all([
+      const results8 = await Promise.all([
         readNamedTable(rTbl),readNamedTable(sTbl),readNamedTable("Demand"),
         readNamedTable("Adjustments"),readNamedTable("CapacityOverride"),
         readNamedTable("Routings"),readNamedTable("CapacityBase"),readNamedTable("Calendar"),
       ]);
+      const rData  = results8[0] as {headers:string[];rows:(string|number)[][]};
+      const sData  = results8[1] as {headers:string[];rows:(string|number)[][]};
+      const dData  = results8[2] as {headers:string[];rows:(string|number)[][]};
+      const aData  = results8[3] as {headers:string[];rows:(string|number)[][]};
+      const cData  = results8[4] as {headers:string[];rows:(string|number)[][]};
+      const rtData = results8[5] as {headers:string[];rows:(string|number)[][]};
+      const cbData = results8[6] as {headers:string[];rows:(string|number)[][]};
+      const calData= results8[7] as {headers:string[];rows:(string|number)[][]};
+
       setResults(rData.rows.map(r=>({
         plant:String(r[0]),stage:String(r[1]),week:String(r[2]),status:String(r[3]),
         backlog:Number(r[4]),planned:Number(r[5]),total:Number(r[6]),
         cap:Number(r[7]),util:Number(r[8]),overload:Number(r[9]),
       })));
-      // Schedule col layout (21 cols):
-      // 0=OppID,1=LineID,2=Equip,3=Plant,4=OIDatePlanned,5=OIDate,6=Status,
-      // 7=KOM,8=iKOM,9=1stBOM,10=Frozen,11=FinalBOM,
-      // 12=AsmStart,13=AsmFinish,14=TstStart,15=TstFinish,
-      // 16=PDI,17=FAT,18=EOP,19=FCA,20=LT
       setSchedule(sData.rows.map(r=>({
         oppId:String(r[0]),lineId:String(r[1]),equip:String(r[2]),plant:String(r[3]),
         oiDatePlanned:Number(r[4]),oiDate:Number(r[5]),status:String(r[6]),
@@ -427,7 +431,7 @@ export default function App() {
         pdi:Number(r[16]),fat:Number(r[17]),eop:Number(r[18]),
         fca:Number(r[19]),lt:Number(r[20]),
       })));
-      const dh=dData.headers; setDemandHeaders(dh);
+      const dh:string[] = dData.headers; setDemandHeaders(dh);
       setDemand(dData.rows.map((r,i)=>({
         rowIdx:i,
         oppId:String(r[dh.indexOf("OppID")]??""),
@@ -448,7 +452,7 @@ export default function App() {
         country:String(r[dh.indexOf("Country")]??""),
         planSpeculative:String(r[dh.indexOf("PlanSpeculative")]??""),
       })));
-      const ah=aData.headers; setAdjHeaders(ah);
+      const ah:string[] = aData.headers; setAdjHeaders(ah);
       setAdjRows(aData.rows.map((r,i)=>({
         rowIdx:i,oppId:String(r[ah.indexOf("OppID")]??""),
         lineId:String(r[ah.indexOf("LineID")]??""),
@@ -456,7 +460,7 @@ export default function App() {
         loadOv:String(r[ah.indexOf("LoadOverride")]??""),
         startWk:String(r[ah.indexOf("StartWeek")]??""),
       })));
-      const ch=cData.headers;
+      const ch:string[] = cData.headers;
       setCapOvRows(cData.rows.map((r,i)=>({
         rowIdx:i,plant:String(r[ch.indexOf("Plant")]??""),
         stage:String(r[ch.indexOf("Stage")]??""),
@@ -464,7 +468,7 @@ export default function App() {
         cap:String(r[ch.indexOf("Cap")]??""),
       })));
       const rkIdx=rtData.headers.indexOf("Routing Key");
-      setRoutingKeys(Array.from(new Set(rtData.rows.map(r=>String(r[rkIdx]??"")).filter(Boolean))).sort());
+      setRoutingKeys(Array.from(new Set(rtData.rows.map(r=>String(r[rkIdx]??"")).filter(v => !!v))).sort());
       const STAGE_COL:Record<string,string>={ESL:"ESL Load",CTO:"CTO Load",Assembly:"Assembly Load",Testing:"Testing Load",FAT:"FAT Load"};
       const rl:Record<string,Record<string,number>>={};
       for (const r of rtData.rows) {
@@ -473,12 +477,14 @@ export default function App() {
         for (const st of STAGES){const ci=rtData.headers.indexOf(STAGE_COL[st]);rl[key][st]=ci>=0?Number(r[ci]??0):0;}
       }
       setRoutingLoads(rl);
-      const ps=new Set<string>();
-      cbData.rows.forEach(r=>{const p=String(r[cbData.headers.indexOf("Plant")]??"");if(p)ps.add(p);});
-      const pl=Array.from(ps).sort(); setPlants(pl);
-      if(!hPlant&&pl.length)setHPlant(pl[0]);
-      if(!gPlants.length&&pl.length)setGPlants([pl[0]]);
-      if(!coPlant&&pl.length)setCoPlant(pl[0]);
+      const ps: string[] = cbData.rows
+        .map((r): string => String(r[cbData.headers.indexOf("Plant")] ?? ""))
+        .filter((v): v is string => !!v);
+      const pl: string[] = Array.from(new Set(ps)).sort();
+      setPlants(pl);
+      if (!hPlant && pl.length > 0) { setHPlant(pl[0]); }
+      if (!gPlants.length && pl.length > 0) { setGPlants([pl[0]]); }
+      if (!coPlant && pl.length > 0) { setCoPlant(pl[0]); }
       const wIdx=calData.headers.indexOf("WeekIndex"),wStart=calData.headers.indexOf("WeekStart");
       const l2i:Record<string,number>={},i2l:Record<string,string>={},w2s:Record<number,number>={};
       if(wIdx>=0&&wStart>=0){
@@ -489,7 +495,10 @@ export default function App() {
       }
       setWeekLabelToIndex(l2i); setIndexToWeekLabel(i2l); setWeekToStartSerial(w2s);
       setLoadMsg(`Loaded ${rData.rows.length} capacity rows · ${sData.rows.length} schedule lines`);
-    }catch(e:unknown){setErrMsg(String(e));setLoadMsg("");}
+    } catch(e:unknown) {
+      setErrMsg(String(e));
+      setLoadMsg("");
+    }
     setLoading(false);
   },[mode]);
 
@@ -521,38 +530,61 @@ export default function App() {
   const heatWeeks=Object.keys(hwm).sort();
 
   /* ── demand + schedule join ── */
-  const schedByLine:Record<string,SchedRow>={};
-  for(const s of schedule)schedByLine[s.lineId]=s;
+  type DemandRowWithSched = DemandRow & { sched?: SchedRow; };
 
-  const alignedOppIds=new Set<string>();
-  for(const d of demand){const f=d.alignFlag;if(f!==""&&f!=="0")alignedOppIds.add(d.oppId);}
-
-  // Driver line per aligned deal: max LT among planned lines
-  const driverByDeal:Record<string,string>={};
-  for(const oppId of Array.from(alignedOppIds)){
-    let maxLt=-1,driverLineId="";
-    for(const d of demand){
-      if(d.oppId!==oppId)continue;
-      const s=schedByLine[d.lineId];
-      if(s&&s.lt>maxLt){maxLt=s.lt;driverLineId=d.lineId;}
-    }
-    if(driverLineId)driverByDeal[oppId]=driverLineId;
+  const schedByLine: Record<string, SchedRow> = {};
+  for (const sc of schedule) {
+    const lineKey: string = String(sc.lineId ?? "");
+    if (lineKey) { schedByLine[lineKey] = sc; }
   }
 
-  const allRegions=Array.from(new Set(demand.map(d=>d.region).filter(Boolean))).sort();
-  const allCustomers=Array.from(new Set(demand.map(d=>d.customer).filter(Boolean))).sort();
+  const alignedOppIds = new Set<string>();
+  for (const d of demand) {
+    const f = String(d.alignFlag ?? "");
+    const oppKey: string = String(d.oppId ?? "");
+    if (oppKey && f !== "" && f !== "0") { alignedOppIds.add(oppKey); }
+  }
 
-  const demandFiltered=demand.filter(d=>{
-    if(!dChangeFilter&&d.changeFlag==="Removed")return false;
-    if(dChangeFilter&&d.changeFlag!==dChangeFilter)return false;
-    if(dFilter==="unassigned"&&d.routingKey&&d.plant)return false;
-    if(dPlantFilter&&d.plant!==dPlantFilter)return false;
-    if(dStatusFilter&&d.status!==dStatusFilter)return false;
-    if(dRegionFilter&&d.region!==dRegionFilter)return false;
-    if(dCustomerFilter&&d.customer!==dCustomerFilter)return false;
-    if(dSearch&&!d.oppId.toLowerCase().includes(dSearch.toLowerCase())&&!d.equip.toLowerCase().includes(dSearch.toLowerCase()))return false;
-    return true;
-  }).map(d=>({...d,sched:schedByLine[d.lineId]}));
+  // Driver line per aligned deal: max LT among planned lines
+  const driverByDeal: Record<string, string> = {};
+  for (const oppIdRaw of Array.from(alignedOppIds)) {
+    const oppId: string = String(oppIdRaw ?? "");
+    if (!oppId) continue;
+    let maxLt = -1;
+    let driverLineId = "";
+    for (const d of demand) {
+      const demandOppId: string = String(d.oppId ?? "");
+      if (demandOppId !== oppId) continue;
+      const lineKey: string = String(d.lineId ?? "");
+      const sc = schedByLine[lineKey];
+      if (sc && sc.lt > maxLt) { maxLt = sc.lt; driverLineId = lineKey; }
+    }
+    if (driverLineId) { driverByDeal[String(oppId)] = driverLineId; }
+  }
+
+  const allRegions=Array.from(new Set(demand.map(d=>d.region).filter(v => !!v))).sort();
+  const allCustomers=Array.from(new Set(demand.map(d=>d.customer).filter(v => !!v))).sort();
+
+  const demandFiltered: DemandRowWithSched[] = demand
+    .filter((d: DemandRow) => {
+      if (!dChangeFilter && d.changeFlag === "Removed") return false;
+      if (dChangeFilter && d.changeFlag !== dChangeFilter) return false;
+      if (dFilter === "unassigned" && d.routingKey && d.plant) return false;
+      if (dPlantFilter && d.plant !== dPlantFilter) return false;
+      if (dStatusFilter && d.status !== dStatusFilter) return false;
+      if (dRegionFilter && d.region !== dRegionFilter) return false;
+      if (dCustomerFilter && d.customer !== dCustomerFilter) return false;
+      if (dSearch &&
+        !String(d.oppId ?? "").toLowerCase().includes(dSearch.toLowerCase()) &&
+        !String(d.equip ?? "").toLowerCase().includes(dSearch.toLowerCase())) {
+        return false;
+      }
+      return true;
+    })
+    .map((d: DemandRow): DemandRowWithSched => ({
+      ...d,
+      sched: schedByLine[String(d.lineId ?? "")],
+    }));
 
   // Batch-write flag to all deal lines
   const batchWriteFlag = async (oppId:string, colName:string, value:string) => {
@@ -567,7 +599,7 @@ export default function App() {
       await batchWriteFlag(d.oppId,"AlignFlag",newVal);
       setActionNote(newVal==="1"?`Deal ${d.oppId} flagged for alignment.`:`Alignment flag cleared for deal ${d.oppId}.`);
       await load();
-    }catch(e){setActionNote(`Error: ${String(e)}`);}
+    }catch(e:unknown){setActionNote(`Error: ${String(e)}`);}
   };
 
   const togglePlanSpec=async(d:DemandRow)=>{
@@ -576,7 +608,7 @@ export default function App() {
       await batchWriteFlag(d.oppId,"PlanSpeculative",newVal);
       setActionNote(newVal==="1"?`Deal ${d.oppId} opted in to speculative planning.`:`Speculative flag cleared for deal ${d.oppId}.`);
       await load();
-    }catch(e){setActionNote(`Error: ${String(e)}`);}
+    }catch(e:unknown){setActionNote(`Error: ${String(e)}`);}
   };
 
   const saveDemandLine=async()=>{
@@ -592,10 +624,8 @@ export default function App() {
       if(dRk)await writeCellInTable("Demand",dEditing.rowIdx,"RoutingKey",dRk,h);
       if(dPlant)await writeCellInTable("Demand",dEditing.rowIdx,"Plant",dPlant,h);
       await writeCellInTable("Demand",dEditing.rowIdx,"Priority",dPriority===""?"":Number(dPriority),h);
-      // Flags — batch write to all deal lines
       await batchWriteFlag(dEditing.oppId,"AlignFlag",dAlignFlag?"1":"");
       await batchWriteFlag(dEditing.oppId,"PlanSpeculative",dPlanSpec?"1":"");
-      // OIDatePlanned
       const serial=dOiPlanned!==""?strToExcelDate(dOiPlanned):0;
       if(dOiPlanned!==""&&serial>0){
         if(dOiSpread){
@@ -614,7 +644,6 @@ export default function App() {
       }else if(dOiPlanned===""){
         await writeCellInTable("Demand",dEditing.rowIdx,"OIDatePlanned","",h);
       }
-      // Stage adjustments
       for(const st of dActiveStages){
         const ov=dStageOv[st];
         if(!ov||(ov.loadOv===""&&ov.startWk===""))continue;
@@ -626,7 +655,7 @@ export default function App() {
       setActionNote(`Saved ${dEditing.oppId}`);
       setDEditing(null); setDStageOv({}); setDActiveStages([]); setDStagePendingDelete(null);
       await load();
-    }catch(e){setActionNote(`Error: ${String(e)}`);}
+    }catch(e:unknown){setActionNote(`Error: ${String(e)}`);}
     setDSaving(false);
   };
 
@@ -642,7 +671,7 @@ export default function App() {
       setDActiveStages(prev=>prev.filter(s=>s!==stage));
       setDStagePendingDelete(null);
       await load();
-    }catch(e){setActionNote(`Error: ${String(e)}`);}
+    }catch(e:unknown){setActionNote(`Error: ${String(e)}`);}
     setDSaving(false);
   };
 
@@ -657,7 +686,7 @@ export default function App() {
       if(ex){await updateRowInTable("Adjustments",ex.rowIdx,row);setActionNote(`Updated ${aOppId}/${aStage}`);}
       else{await appendRowToTable("Adjustments",row);setActionNote(`Added ${aOppId}/${aStage}`);}
       setAEditingRow(null); setAPendingDelete(false); await load();
-    }catch(e){setActionNote(`Error: ${String(e)}`);}
+    }catch(e:unknown){setActionNote(`Error: ${String(e)}`);}
     setASaving(false);
   };
 
@@ -669,7 +698,7 @@ export default function App() {
       setActionNote(`Deleted ${aEditingRow.oppId}/${aEditingRow.stage}.`);
       setAOppId(""); setALineId(""); setALoadOv(""); setAStartWk("");
       setAEditingRow(null); setAPendingDelete(false); await load();
-    }catch(e){setActionNote(`Error: ${String(e)}`);}
+    }catch(e:unknown){setActionNote(`Error: ${String(e)}`);}
     setASaving(false);
   };
 
@@ -684,7 +713,7 @@ export default function App() {
       if(ex){await updateRowInTable("CapacityOverride",ex.rowIdx,row);setActionNote(`Updated ${coPlant}/${coStage}/W${wk}`);}
       else{await appendRowToTable("CapacityOverride",row);setActionNote(`Added ${coPlant}/${coStage}/W${wk}`);}
       setCoEditingRow(null); setCoPendingDelete(false); await load();
-    }catch(e){setActionNote(`Error: ${String(e)}`);}
+    }catch(e:unknown){setActionNote(`Error: ${String(e)}`);}
     setCoSaving(false);
   };
 
@@ -696,7 +725,7 @@ export default function App() {
       setActionNote(`Deleted ${coEditingRow.plant}/${coEditingRow.stage}/W${coEditingRow.week}.`);
       setCoPlant(plants[0]??""); setCoStage("Assembly"); setCoWeek(""); setCoCap("");
       setCoEditingRow(null); setCoPendingDelete(false); await load();
-    }catch(e){setActionNote(`Error: ${String(e)}`);}
+    }catch(e:unknown){setActionNote(`Error: ${String(e)}`);}
     setCoSaving(false);
   };
 
@@ -753,12 +782,12 @@ export default function App() {
               <button style={s.shotBtn} disabled={shotBusy} onClick={async()=>{
                 if(!chartRef.current)return; setShotBusy(true); setActionNote("");
                 try{await downloadChartAsPng(chartRef.current,`sop-${gStage}-${new Date().toISOString().slice(0,10)}.png`);setActionNote("Chart saved.");}
-                catch(e){setActionNote(`Error: ${String(e)}`);}
+                catch(e:unknown){setActionNote(`Error: ${String(e)}`);}
                 setShotBusy(false);
               }}>{shotBusy?"Saving…":"Save as PNG"}</button>
             </div>
             <div ref={chartRef}>
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer width="100%" height={300} children={
                 <AreaChart data={graphData} margin={{top:4,right:8,left:0,bottom:64}}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0"/>
                   <XAxis dataKey="week" tick={{fontSize:10}} angle={-60} textAnchor="end" interval="preserveStartEnd"/>
@@ -771,7 +800,7 @@ export default function App() {
                   ))}
                   <Line type="monotone" dataKey="_cap" name="Capacity" stroke="#dc2626" strokeWidth={2} dot={false} connectNulls legendType="line" isAnimationActive={false}/>
                 </AreaChart>
-              </ResponsiveContainer>
+              }/>
             </div>
           </>)}
           <div style={s.coInlineCard}>
@@ -830,9 +859,7 @@ export default function App() {
                 {hSelWeek ? `Deals impacting ${hPlant} · ${hStage} · ${hSelWeek}` : `Breakdown — ${hPlant} · ${hStage}`}
               </div>
               {hSelWeek ? (() => {
-                // Deal-level breakdown for selected week
-                // Find schedule lines whose stage window covers the selected week
-                const selWeekIdx = weekLabelToIndex[hSelWeek] ?? 0;
+                const selWeekIdx = Number(weekLabelToIndex[hSelWeek] ?? 0);
                 const getStageWindow = (sc: SchedRow): { start: number; end: number } => {
                   switch(hStage) {
                     case "Assembly": return { start: sc.asmStart, end: sc.asmFinish };
@@ -843,36 +870,26 @@ export default function App() {
                     default:         return { start: 0, end: 0 };
                   }
                 };
-                // Convert week index to serial range for comparison
                 const selWeekSerial = weekToStartSerial[selWeekIdx] ?? 0;
                 const selWeekEndSerial = selWeekSerial + 6;
-
-                // Filter schedule lines matching plant + stage window covers selected week
                 const impactingLines = schedule.filter(sc => {
                   if (sc.plant !== hPlant) return false;
                   const { start, end } = getStageWindow(sc);
                   if (!start || !end) return false;
-                  // window overlaps week if start <= weekEnd AND end >= weekStart
                   return start <= selWeekEndSerial && end >= selWeekSerial;
                 });
-
-                // Backlog rows for this week (from Results — no deal detail)
                 const backlogRows = heatRows.filter(r => r.week === hSelWeek && r.status === "Backlog");
                 const backlogTotal = backlogRows.reduce((sum, r) => sum + r.total, 0);
-
-                // Group impacting lines by status
                 const byStatus: Record<string, SchedRow[]> = {};
                 for (const sc of impactingLines) {
-                  const st = sc.status;
-                  if (!byStatus[st]) byStatus[st] = [];
-                  byStatus[st].push(sc);
+                  if (!byStatus[sc.status]) byStatus[sc.status] = [];
+                  byStatus[sc.status].push(sc);
                 }
-                const statusGroups = Object.entries(byStatus).sort((a, b) => {
+                const statusGroups: [string, SchedRow[]][] = (Object.entries(byStatus) as [string, SchedRow[]][]).sort((a, b) => {
                   const ra = STATUS_LIST.indexOf(a[0]);
                   const rb = STATUS_LIST.indexOf(b[0]);
                   return (ra === -1 ? 99 : ra) - (rb === -1 ? 99 : rb);
                 });
-
                 return (
                   <div style={s.tableScroll}>
                     <table style={s.table}><thead><tr>
@@ -885,7 +902,6 @@ export default function App() {
                       <th style={s.thR}>FCA</th>
                       <th style={s.thR}>LT</th>
                     </tr></thead><tbody>
-                      {/* Backlog row first */}
                       {backlogTotal > 0 && (
                         <tr style={s.trEven}>
                           <td style={s.td} colSpan={2}><span style={{...s.badge,background:"#1e293b"}}>Backlog</span></td>
@@ -893,29 +909,33 @@ export default function App() {
                           <td style={s.tdR} colSpan={5}>{Math.round(backlogTotal)} units</td>
                         </tr>
                       )}
-                      {statusGroups.map(([status, lines]) => (<>
-                        {/* Status subtotal header row */}
-                        <tr key={`sub-${status}`} style={{background:"#f1f5f9"}}>
-                          <td style={{...s.td,fontWeight:700}} colSpan={2}>
-                            <span style={{...s.badge,background:STATUS_COLORS[status]??"#6b7280"}}>{STATUS_SHORT[status]??status}</span>
-                            <span style={{marginLeft:8,fontSize:13,color:"#475569"}}>{lines.length} line{lines.length!==1?"s":""}</span>
-                          </td>
-                          <td style={s.td} colSpan={6}/>
-                        </tr>
-                        {/* Individual deal lines */}
-                        {lines.map((sc, i) => (
-                          <tr key={`${sc.lineId}-${i}`} style={i%2===0?s.trEven:s.trOdd}>
-                            <td style={s.td}/>
-                            <td style={s.tdMono}>{sc.oppId}</td>
-                            <td style={{...s.td,maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={sc.equip}>{sc.equip}</td>
-                            <td style={s.tdR}>{excelDateToStr(sc.oiDatePlanned||sc.oiDate)}</td>
-                            <td style={s.tdR}>{weekLabel(sc.asmStart)}</td>
-                            <td style={s.tdR}>{weekLabel(sc.asmFinish)}</td>
-                            <td style={s.tdR}>{excelDateToStr(sc.fca)}</td>
-                            <td style={{...s.tdR,fontWeight:600}}>{sc.lt}</td>
-                          </tr>
-                        ))}
-                      </>))}
+                      {statusGroups.map((entry: [string, SchedRow[]]) => {
+                        const status: string = entry[0];
+                        const lines: SchedRow[] = entry[1];
+                        return (
+                          <React.Fragment key={`grp-${status}`}>
+                            <tr style={{background:"#f1f5f9"}}>
+                              <td style={{...s.td,fontWeight:700}} colSpan={2}>
+                                <span style={{...s.badge,background:STATUS_COLORS[status]??"#6b7280"}}>{STATUS_SHORT[status]??status}</span>
+                                <span style={{marginLeft:8,fontSize:13,color:"#475569"}}>{lines.length} line{lines.length!==1?"s":""}</span>
+                              </td>
+                              <td style={s.td} colSpan={6}/>
+                            </tr>
+                            {lines.map((sc: SchedRow, i: number) => (
+                              <tr key={`${sc.lineId}-${i}`} style={i%2===0?s.trEven:s.trOdd}>
+                                <td style={s.td}/>
+                                <td style={s.tdMono}>{sc.oppId}</td>
+                                <td style={{...s.td,maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={sc.equip}>{sc.equip}</td>
+                                <td style={s.tdR}>{excelDateToStr(sc.oiDatePlanned||sc.oiDate)}</td>
+                                <td style={s.tdR}>{weekLabel(sc.asmStart)}</td>
+                                <td style={s.tdR}>{weekLabel(sc.asmFinish)}</td>
+                                <td style={s.tdR}>{excelDateToStr(sc.fca)}</td>
+                                <td style={{...s.tdR,fontWeight:600}}>{sc.lt}</td>
+                              </tr>
+                            ))}
+                          </React.Fragment>
+                        );
+                      })}
                       {impactingLines.length === 0 && backlogTotal === 0 && (
                         <tr><td colSpan={8} style={{...s.td,color:"#94a3b8",textAlign:"center"}}>No planned lines found for this week.</td></tr>
                       )}
@@ -923,7 +943,6 @@ export default function App() {
                   </div>
                 );
               })() : (
-                // No week selected — show status totals across all weeks
                 <div style={s.tableScroll}>
                   <table style={s.table}><thead><tr>
                     <th style={s.th}>Week</th><th style={s.th}>Status</th>
@@ -990,7 +1009,7 @@ export default function App() {
             <div style={s.editCard}>
               <div style={s.editTitle}>{dEditing.oppId} · {dEditing.equip}</div>
               {(dEditing.customer||dEditing.region)&&(
-                <div style={s.contextNote}>{[dEditing.customer,dEditing.region,dEditing.subRegion,dEditing.country].filter(Boolean).join(" · ")}</div>
+                <div style={s.contextNote}>{[dEditing.customer,dEditing.region,dEditing.subRegion,dEditing.country].filter(v => !!v).join(" · ")}</div>
               )}
               {dEditing.changedFields&&(
                 <div style={s.changedNote}>
@@ -1013,8 +1032,6 @@ export default function App() {
                   <input style={s.inp} type="number" placeholder="blank = auto" value={dPriority} onChange={e=>setDPriority(e.target.value)}/>
                 </label>
               </div>
-
-              {/* OI Planned */}
               <div style={s.oiRow}>
                 <div style={s.oiBlock}>
                   <div style={s.sectionLbl}>OI Live</div>
@@ -1030,8 +1047,6 @@ export default function App() {
                   </label>
                 </div>
               </div>
-
-              {/* Flags */}
               <div style={s.alignFlagRow}>
                 <label style={s.alignFlagLabel}>
                   <input type="checkbox" checked={dAlignFlag} onChange={e=>setDAlignFlag(e.target.checked)} style={{marginRight:6}}/>
@@ -1048,8 +1063,6 @@ export default function App() {
                   </label>
                 </div>
               )}
-
-              {/* Stage adjustments — dropdown add pattern */}
               <div style={{...s.sectionLbl,marginTop:12}}>Stage adjustments</div>
               {dActiveStages.map(st=>{
                 const std=dRk?(routingLoads[dRk]?.[st]??0):(dEditing.routingKey?(routingLoads[dEditing.routingKey]?.[st]??0):0);
@@ -1076,16 +1089,13 @@ export default function App() {
                 <button style={s.addStageBtn} onClick={()=>{
                   if(!dActiveStages.includes(dStageToAdd)){
                     setDActiveStages([...dActiveStages,dStageToAdd]);
-                    // pre-fill from existing adj if present
                     const ex=adjRows.find(r=>r.oppId===dEditing.oppId&&r.lineId===dEditing.lineId&&r.stage===dStageToAdd);
                     setDStageOv({...dStageOv,[dStageToAdd]:{loadOv:ex?.loadOv??"",startWk:ex?.startWk?formatWeek(ex.startWk):""}});
                   }
-                  // pick next available stage for the dropdown
                   const remaining=STAGES.filter(st=>st!==dStageToAdd&&![...dActiveStages,dStageToAdd].includes(st));
                   if(remaining.length)setDStageToAdd(remaining[0]);
                 }}>+ Add stage</button>
               </div>
-
               <div style={{display:"flex",gap:8,marginTop:4}}>
                 <button style={s.saveBtn} onClick={saveDemandLine} disabled={dSaving}>{dSaving?"Saving…":"Save"}</button>
                 <button style={s.cancelBtn} onClick={()=>{setDEditing(null);setDStageOv({});setDActiveStages([]);setDStagePendingDelete(null);}}>Cancel</button>
@@ -1134,11 +1144,9 @@ export default function App() {
                       {d.oiDatePlanned?excelDateToStr(d.oiDatePlanned):excelDateToStr(d.oiDate)}{oiDiverged&&" ⚠"}
                     </td>
                     <td style={s.tdR}>{excelDateToStr(d.oiDate)}</td>
-                    {/* Assembly Start/Finish as week labels */}
                     <td style={s.tdR}>{d.sched?weekLabel(d.sched.asmStart):""}</td>
                     <td style={s.tdR}>{d.sched?weekLabel(d.sched.asmFinish):""}</td>
                     <td style={s.tdR}>{d.sched?excelDateToStr(d.sched.fca):""}</td>
-                    {/* LT — yellow highlight for driver */}
                     <td style={{...s.tdR,fontWeight:700,background:isDriver?"#fef08a":"inherit",color:isDriver?"#713f12":"inherit"}} title={isDriver?"LT driver for this deal":undefined}>
                       {d.sched?.lt??""}{isDriver&&" ●"}
                     </td>
@@ -1162,7 +1170,6 @@ export default function App() {
                           setDPlanSpec(d.planSpeculative!==""&&d.planSpeculative!=="0");
                           setDOiPlanned(d.oiDatePlanned?excelDateToStr(d.oiDatePlanned):"");
                           setDOiSpread(true); setDStagePendingDelete(null);
-                          // Seed active stages from existing adj rows
                           const existingStages=adjRows.filter(r=>r.oppId===d.oppId&&r.lineId===d.lineId).map(r=>r.stage);
                           setDActiveStages(existingStages);
                           const seed:Record<string,{loadOv:string;startWk:string}>={};

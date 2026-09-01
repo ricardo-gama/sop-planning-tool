@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<OfficeApp
+  xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+  xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
+  xsi:type="TaskPaneApp">
+
+  <!-- IMPORTANT: generate a fresh GUID for production.
+       In PowerShell:  [guid]::NewGuid()
+       Do NOT reuse the Planning Tool's manifest ID. -->
+  <Id>cbbc7e28-fedd-457f-975f-7e57e943e7b4</Id>
+
+  <Version>1.0.0.0</Version>
+  <ProviderName>Sidel — Global Equipment Planning</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+
+  <DisplayName DefaultValue="Demand Tool" />
+  <Description DefaultValue="S&amp;OP Demand Tool — pipeline promotion and CRM opportunity management." />
+
+  <!-- Icon paths reuse the Planning Tool's icons for now.
+       Replace with dedicated Demand Tool icons when available. -->
+  <IconUrl DefaultValue="https://ricardo-gama.github.io/sop-planning-tool/assets/icon-32.png" />
+  <HighResolutionIconUrl DefaultValue="https://ricardo-gama.github.io/sop-planning-tool/assets/icon-64.png" />
+
+  <SupportUrl DefaultValue="https://github.com/ricardo-gama/sop-planning-tool" />
+
+  <AppDomains>
+    <AppDomain>https://ricardo-gama.github.io</AppDomain>
+  </AppDomains>
+
+  <Hosts>
+    <Host Name="Workbook" />
+  </Hosts>
+
+  <DefaultSettings>
+    <!-- Points to the /demand/ subfolder produced by webpack -->
+    <SourceLocation DefaultValue="https://ricardo-gama.github.io/sop-planning-tool/demand/" />
+  </DefaultSettings>
+
+  <Permissions>ReadWriteDocument</Permissions>
+
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <Hosts>
+      <Host xsi:type="Workbook">
+
+        <DesktopFormFactor>
+          <GetStarted>
+            <Title resid="GetStarted.Title" />
+            <Description resid="GetStarted.Description" />
+            <LearnMoreUrl resid="GetStarted.LearnMoreUrl" />
+          </GetStarted>
+
+          <FunctionFile resid="Commands.Url" />
+
+          <ExtensionPoint xsi:type="PrimaryCommandSurface">
+            <OfficeTab id="TabHome">
+              <Group id="DemandToolGroup">
+                <Label resid="CommandsGroup.Label" />
+                <Icon>
+                  <bt:Image size="16" resid="Icon.16x16" />
+                  <bt:Image size="32" resid="Icon.32x32" />
+                  <bt:Image size="80" resid="Icon.80x80" />
+                </Icon>
+                <Control xsi:type="Button" id="OpenDemandTool">
+                  <Label resid="TaskpaneButton.Label" />
+                  <Supertip>
+                    <Title resid="TaskpaneButton.Label" />
+                    <Description resid="TaskpaneButton.Tooltip" />
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16x16" />
+                    <bt:Image size="32" resid="Icon.32x32" />
+                    <bt:Image size="80" resid="Icon.80x80" />
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>DemandToolPane</TaskpaneId>
+                    <SourceLocation resid="Taskpane.Url" />
+                  </Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
+
+          <ExtensionPoint xsi:type="CustomFunctions" />
+        </DesktopFormFactor>
+
+      </Host>
+    </Hosts>
+
+    <Resources>
+      <bt:Images>
+        <bt:Image id="Icon.16x16" DefaultValue="https://ricardo-gama.github.io/sop-planning-tool/assets/icon-16.png" />
+        <bt:Image id="Icon.32x32" DefaultValue="https://ricardo-gama.github.io/sop-planning-tool/assets/icon-32.png" />
+        <bt:Image id="Icon.80x80" DefaultValue="https://ricardo-gama.github.io/sop-planning-tool/assets/icon-80.png" />
+      </bt:Images>
+      <bt:Urls>
+        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://github.com/ricardo-gama/sop-planning-tool" />
+        <bt:Url id="Commands.Url"   DefaultValue="https://ricardo-gama.github.io/sop-planning-tool/demand/" />
+        <bt:Url id="Taskpane.Url"   DefaultValue="https://ricardo-gama.github.io/sop-planning-tool/demand/" />
+      </bt:Urls>
+      <bt:ShortStrings>
+        <bt:String id="GetStarted.Title"        DefaultValue="Demand Tool" />
+        <bt:String id="CommandsGroup.Label"     DefaultValue="S&amp;OP" />
+        <bt:String id="TaskpaneButton.Label"    DefaultValue="Demand Tool" />
+      </bt:ShortStrings>
+      <bt:LongStrings>
+        <bt:String id="GetStarted.Description"  DefaultValue="Open the Demand Tool to manage your S&amp;OP pipeline." />
+        <bt:String id="TaskpaneButton.Tooltip"  DefaultValue="Open the Demand Tool task pane." />
+      </bt:LongStrings>
+    </Resources>
+
+  </VersionOverrides>
+</OfficeApp>
