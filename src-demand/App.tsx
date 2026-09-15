@@ -1,3 +1,12 @@
+Office.context.ui.displayDialogAsync(
+    "https://ricardo-gama.github.io/sop-planning-tool/demand/index.html",
+    {
+        height: 80,
+        width: 40,
+        displayInIframe: true
+    }
+);
+
 /// <reference types="office-js" />
 import * as React from "react";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
