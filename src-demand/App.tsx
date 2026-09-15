@@ -1,10 +1,18 @@
+let dialog: Office.Dialog;
 Office.context.ui.displayDialogAsync(
-    "https://ricardo-gama.github.io/sop-planning-tool/demand/index.html",
-    {
-        height: 80,
-        width: 40,
-        displayInIframe: true
+  "https://ricardo-gama.github.io/sop-planning-tool/demand/index.html",
+  { height: 80, width: 40, displayInIframe: true },
+  (asyncResult) => {
+    if (asyncResult.status === Office.AsyncResultStatus.Failed) {
+      console.error(asyncResult.error.message);
+      return;
     }
+    dialog = asyncResult.value;
+    dialog.addEventHandler(Office.EventType.DialogMessageReceived, (arg: any) => {
+      dialog.close();
+      // handle arg.message
+    });
+  }
 );
 
 /// <reference types="office-js" />
