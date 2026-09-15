@@ -1,20 +1,3 @@
-let dialog: Office.Dialog;
-Office.context.ui.displayDialogAsync(
-  "https://ricardo-gama.github.io/sop-planning-tool/demand/index.html",
-  { height: 80, width: 40, displayInIframe: true },
-  (asyncResult) => {
-    if (asyncResult.status === Office.AsyncResultStatus.Failed) {
-      console.error(asyncResult.error.message);
-      return;
-    }
-    dialog = asyncResult.value;
-    dialog.addEventHandler(Office.EventType.DialogMessageReceived, (arg: any) => {
-      dialog.close();
-      // handle arg.message
-    });
-  }
-);
-
 /// <reference types="office-js" />
 import * as React from "react";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
@@ -755,6 +738,31 @@ export default function App() {
   /* ── pipeline row delete ── */
   const [pendingDeleteCep, setPendingDeleteCep] = useState<string | null>(null);
   const [deleting,         setDeleting]         = useState(false);
+
+  /* ── dialog ── */
+  const dialogRef = useRef<Office.Dialog | null>(null);
+
+  const openDemandDialog = useCallback(() => {
+    Office.context.ui.displayDialogAsync(
+      "https://ricardo-gama.github.io/sop-planning-tool/demand/index.html",
+      { height: 80, width: 40, displayInIframe: true },
+      (asyncResult) => {
+        if (asyncResult.status === Office.AsyncResultStatus.Failed) {
+          console.error(asyncResult.error.message);
+          return;
+        }
+        dialogRef.current = asyncResult.value;
+        dialogRef.current.addEventHandler(Office.EventType.DialogMessageReceived, (arg: any) => {
+          dialogRef.current?.close();
+          // handle arg.message
+        });
+      }
+    );
+  }, []);
+  
+  useEffect(() => {
+    openDemandDialog();
+  }, [openDemandDialog]);
 
   /* ── load ─────────────────────────────────────────────────────────────── */
   const load = useCallback(async () => {
@@ -1545,6 +1553,7 @@ export default function App() {
           <button style={s.reloadBtn} onClick={load} disabled={loading} title="Reload" aria-label="Reload">
             {loading ? "…" : "↻"}
           </button>
+          <button style={s.reloadBtn} onClick={openDemandDialog} title="Open dialog" aria-label="Open dialog">⧉</button>
         </div>
       </div>
 
