@@ -739,6 +739,24 @@ export default function App() {
   const [pendingDeleteCep, setPendingDeleteCep] = useState<string | null>(null);
   const [deleting,         setDeleting]         = useState(false);
 
+
+  const testDialog = () => {
+    // Points directly to the standalone static HTML file
+    const dialogUrl = `${window.location.origin}/dialog.html`;
+
+    Office.context.ui.displayDialogAsync(
+      dialogUrl,
+      { height: 60, width: 60, displayInIframe: true },
+      (asyncResult) => {
+        if (asyncResult.status === Office.AsyncResultStatus.Failed) {
+          console.error("Dialog failed to open:", asyncResult.error.message, asyncResult.error.code);
+        } else {
+          console.log("Dialog opened successfully!");
+        }
+      }
+    );
+  };
+
   /* ── load ─────────────────────────────────────────────────────────────── */
   const load = useCallback(async () => {
     setLoading(true); setErrMsg(""); setLoadMsg("Reading workbook…");
@@ -1498,10 +1516,10 @@ export default function App() {
     ["Sub-region",       opp.subRegion],
     ["Country",          opp.country],
     ["Mkt portfolio",    opp.marketPortfolio],
-    ["Category L1",      opp.marketCategoryL1],
+    //["Category L1",      opp.marketCategoryL1],
     ["Portfolio L2",     opp.portfolioL2],
     ["Value",            opp.value ? `€ ${(Number(opp.value) / 1_000_000).toFixed(1)}M` : "—"],
-    ["CEP stage",        opp.stage],
+    ["Opportunity status",        opp.stage],
     ["Forecast status",  opp.forecastStatus],
     ["Score band",       opp.scoreBand],
     ["Mkt probability",  opp.marketProbability],
@@ -1527,6 +1545,24 @@ export default function App() {
           {lastLoaded && <span style={s.syncTime}>Synced {lastLoaded}</span>}
           <button style={s.reloadBtn} onClick={load} disabled={loading} title="Reload" aria-label="Reload">
             {loading ? "…" : "↻"}
+          </button>
+          <button 
+            style={s.reloadBtn} 
+            onClick={() => {
+              Office.context.ui.displayDialogAsync(
+                `${window.location.origin}/demand/dialog.html`,
+                { height: 60, width: 60, displayInIframe: true },
+                (asyncResult) => {
+                  if (asyncResult.status === Office.AsyncResultStatus.Failed) {
+                    console.error("Dialog failed:", asyncResult.error.message);
+                  }
+                }
+              );
+            }} 
+            title="Test Dialog" 
+            aria-label="Test Dialog"
+          >
+            ⧉
           </button>
         </div>
       </div>
@@ -2044,26 +2080,26 @@ export default function App() {
                 <div style={s.promoteTitle}>Pipeline promotion</div>
                 <div style={s.promoteSub}>
                   {inPipeline
-                    ? "Already in the pipeline (DemandWork entry exists)."
-                    : "Flag to include in the next SyncPipeline run."}
+                    ? "Already in the pipeline."
+                    : "Flag to include in the next Pipeline update."}
                 </div>
               </div>
               {!inPipeline && (
                 <button style={isPromoted ? s.promoteBtnOn : s.promoteBtnOff}
                   onClick={() => togglePromote(opp)} disabled={odPromoting}>
-                  {odPromoting ? "…" : isPromoted ? "Flagged ✓" : "Flag for promotion"}
+                  {odPromoting ? "…" : isPromoted ? "Flagged ✓" : "Flag to include"}
                 </button>
               )}
               {inPipeline && <span style={s.inPipelineBadge}>In pipeline</span>}
             </div>
             {isPromoted && !inPipeline && (
               <div style={s.promoteNote}>
-                ✓ Flagged — run SyncPipeline in Excel to create the pipeline entry.
+                ✓ Flagged — run Pipeline Update in Excel to create the pipeline entry.
               </div>
             )}
 
             {/* CEP snapshot */}
-            <CollapsibleSection title="CEP snapshot" subtitle="read-only · as of last sync">
+            <CollapsibleSection title="CEP snapshot" subtitle="read-only">
               <CrmGrid pairs={oppCepPairs(opp)} />
             </CollapsibleSection>
 
@@ -2145,11 +2181,11 @@ const s = {
   pipelineGrid: { display: "grid" as const, gridTemplateColumns: "0.8fr 2.5fr 2fr 1.5fr 1fr 1fr 1.5fr 1.5fr 1.2fr 1fr 0.5fr", alignItems: "center" as const, borderBottom: "1px solid #f1f5f9" },
   //oppGrid:      { display: "grid" as const, gridTemplateColumns: "26px 74px 98px 85px 80px 56px 68px 76px 65px 50px 50px 64px", alignItems: "center" as const, borderBottom: "1px solid #f1f5f9" },
   oppGrid: { display: "grid" as const, gridTemplateColumns: "0.4fr 0.8fr 2.5fr 2fr 1.5fr 1fr 1fr 1.3fr 0.8fr 0.6fr 0.6fr 0.9fr", alignItems: "center" as const, borderBottom: "1px solid #f1f5f9" },
-  th:           { fontSize: 13, color: "#fff", fontWeight: 600, whiteSpace: "nowrap" as const, overflow: "hidden" as const },
-  td:           { fontSize: 13, color: "#475569", whiteSpace: "nowrap" as const },
-  tdMono:       { fontSize: 13, fontFamily: "monospace", fontWeight: 600, color: "#0284c7", whiteSpace: "nowrap" as const },
+  th:           { fontSize: 11, color: "#fff", fontWeight: 600, whiteSpace: "nowrap" as const, overflow: "hidden" as const },
+  td:           { fontSize: 11, color: "#475569", whiteSpace: "nowrap" as const },
+  tdMono:       { fontSize: 11, fontFamily: "monospace", fontWeight: 600, color: "#0284c7", whiteSpace: "nowrap" as const },
   ell:          { overflow: "hidden" as const, textOverflow: "ellipsis" as const },
-  offerBadge:   { fontSize: 13, background: "#fffbeb", color: "#854d0e", padding: "1px 5px", borderRadius: 8, marginLeft: 3, fontWeight: 600, border: "1px solid #fde68a" },
+  offerBadge:   { fontSize: 11, background: "#fffbeb", color: "#854d0e", padding: "1px 5px", borderRadius: 8, marginLeft: 3, fontWeight: 600, border: "1px solid #fde68a" },
   cbChecked:    { display: "inline-flex" as const, width: 15, height: 15, borderRadius: 3, background: "#0284c7", color: "#fff", fontSize: 11, alignItems: "center" as const, justifyContent: "center" as const },
   cbEmpty:      { display: "inline-block" as const, width: 15, height: 15, borderRadius: 3, border: "1px solid #cbd5e1", background: "#fff" },
   // Detail identity

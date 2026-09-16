@@ -85,6 +85,11 @@ module.exports = async (env, options) => {
         template: "./src-demand/taskpane.html",
         chunks: ["polyfill", "demand/taskpane", "react"],
       }),
+      new HtmlWebpackPlugin({
+        filename: "dialog.html",
+        template: "./src-demand/dialog.html",
+        chunks: ["poly", "dialog"] // or leave chunks out if it's a standalone static HTML file
+      }),
       new CopyWebpackPlugin({
         patterns: [
           {
